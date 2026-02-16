@@ -460,11 +460,10 @@ function applyShopifyFixes(results) {
         } else if (/GPTBot|OAI-SearchBot|Google-Extended|ChatGPT|PerplexityBot|ClaudeBot|Bytespider|Amazonbot|Applebot|meta-externalagent|CCBot|cohere-ai/.test(check.name)) {
           check.shopifyFix = BOT_FIX;
         }
-
-        // Add fixAction for automatable fixes
-        if (FIX_ACTIONS[check.name]) {
-          check.fixAction = FIX_ACTIONS[check.name];
-        }
+      }
+      // Add fixAction for any non-success check with an automatable fix
+      if (check.status !== 'success' && FIX_ACTIONS[check.name]) {
+        check.fixAction = FIX_ACTIONS[check.name];
       }
     }
   }

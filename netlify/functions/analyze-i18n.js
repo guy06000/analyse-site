@@ -823,9 +823,10 @@ function applyShopifyFixes(results) {
         } else if (TYPE_SHOPIFY_FIXES[check.name]) {
           check.shopifyFix = TYPE_SHOPIFY_FIXES[check.name];
         }
-        if (FIX_ACTIONS[check.name]) {
-          check.fixAction = FIX_ACTIONS[check.name];
-        }
+      }
+      // Add fixAction for any non-success check with an automatable fix
+      if (check.status !== 'success' && FIX_ACTIONS[check.name]) {
+        check.fixAction = FIX_ACTIONS[check.name];
       }
     }
   }

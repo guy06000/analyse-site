@@ -764,7 +764,7 @@ function applyShopifyFixes(results) {
       if (check.recommendation && SHOPIFY_FIXES[check.name]) {
         check.shopifyFix = SHOPIFY_FIXES[check.name];
       }
-      if (check.recommendation && FIX_ACTIONS[check.name]) {
+      if (check.status !== 'success' && FIX_ACTIONS[check.name]) {
         check.fixAction = FIX_ACTIONS[check.name];
       }
     }
