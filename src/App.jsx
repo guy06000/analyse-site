@@ -53,7 +53,7 @@ function App() {
     analyzedTabs.current = new Set();
     setSubmitted(true);
 
-    analyze(normalizedUrl, 'seo');
+    analyze(normalizedUrl, 'seo', shopifyConfig);
     analyzedTabs.current.add('seo');
     setActiveTab('seo');
   };
@@ -65,7 +65,7 @@ function App() {
       if (!normalizedUrl.startsWith('http')) {
         normalizedUrl = `https://${normalizedUrl}`;
       }
-      analyze(normalizedUrl, tabId);
+      analyze(normalizedUrl, tabId, shopifyConfig);
       analyzedTabs.current.add(tabId);
     }
   };

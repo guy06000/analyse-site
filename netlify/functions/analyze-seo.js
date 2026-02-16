@@ -17,7 +17,7 @@ export const handler = async (event) => {
   }
 
   try {
-    const { url } = JSON.parse(event.body);
+    const { url, store, accessToken } = JSON.parse(event.body);
     if (!url) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'URL requise' }) };
     }
@@ -42,6 +42,25 @@ export const handler = async (event) => {
         liens: await analyzeLiens($, url),
       },
     };
+
+    // Shopify product images audit (if credentials provided)
+    if (store && accessToken) {
+      try {
+        results.categories.imagesProduits = await analyzeShopifyImages(store, accessToken);
+      } catch (e) {
+        results.categories.imagesProduits = {
+          name: 'Images produits (Shopify)',
+          score: 0,
+          checks: [{
+            name: 'Audit images produits',
+            status: 'error',
+            value: 'Erreur API',
+            detail: e.message,
+            recommendation: 'Vérifiez vos credentials Shopify',
+          }],
+        };
+      }
+    }
 
     results.score = calculateGlobalScore(results.categories);
     applyShopifyFixes(results);
@@ -792,6 +811,111 @@ function applyShopifyFixes(results) {
       }
     }
   }
+}
+
+// ── Shopify product images audit ──
+
+async function analyzeShopifyImages(store, accessToken) {
+  const checks = [];
+
+  // Fetch all products (paginated, up to 250 per page)
+  let allProducts = [];
+  let url = `https://${store}/admin/api/2024-01/products.json?limit=250&fields=id,title,handle,images`;
+
+  while (url) {
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`API Shopify ${res.status}: ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    allProducts = allProducts.concat(data.products);
+
+    // Pagination via Link header
+    const link = res.headers.get('link');
+    if (link && link.includes('rel="next"')) {
+      const match = link.match(/<([^>]+)>;\s*rel="next"/);
+      url = match ? match[1] : null;
+    } else {
+      url = null;
+    }
+  }
+
+  // Analyze images
+  const productsWithMissingAlt = [];
+  let totalImages = 0;
+  let missingAlt = 0;
+
+  for (const product of allProducts) {
+    if (!product.images || product.images.length === 0) continue;
+
+    const missing = product.images.filter((img) => !img.alt || img.alt.trim() === '');
+    totalImages += product.images.length;
+    missingAlt += missing.length;
+
+    if (missing.length > 0) {
+      productsWithMissingAlt.push({
+        title: product.title,
+        handle: product.handle,
+        total: product.images.length,
+        missing: missing.length,
+        images: missing.map((img) => {
+          let src = img.src || '';
+          if (src.length > 100) src = '...' + src.slice(-80);
+          return `${src} (position ${img.position})`;
+        }),
+      });
+    }
+  }
+
+  const withAlt = totalImages - missingAlt;
+  const ratio = totalImages > 0 ? withAlt / totalImages : 1;
+
+  // Summary check
+  checks.push({
+    name: 'Alt sur images produits',
+    status: totalImages === 0 ? 'success' : ratio === 1 ? 'success' : ratio >= 0.8 ? 'warning' : 'error',
+    value: `${withAlt}/${totalImages} images avec alt`,
+    detail: `${allProducts.length} produits analysés — ${missingAlt} image(s) sans alt sur ${productsWithMissingAlt.length} produit(s)`,
+    recommendation: missingAlt > 0
+      ? `Ajoutez les attributs alt manquants : Admin > Produits > cliquez sur l'image > Texte alternatif`
+      : null,
+    detailList: productsWithMissingAlt.length > 0
+      ? productsWithMissingAlt.flatMap((p) =>
+          p.images.map((img) => `${p.title} — ${img}`)
+        )
+      : undefined,
+  });
+
+  // Per-product breakdown for products with many missing
+  const worstProducts = productsWithMissingAlt
+    .sort((a, b) => b.missing - a.missing)
+    .slice(0, 10);
+
+  if (worstProducts.length > 0) {
+    checks.push({
+      name: 'Produits avec le plus d\'images sans alt',
+      status: 'warning',
+      value: `${worstProducts.length} produit(s)`,
+      detail: 'Top 10 des produits avec le plus d\'images sans attribut alt',
+      recommendation: 'Priorisez ces produits pour ajouter les textes alternatifs',
+      detailList: worstProducts.map((p) =>
+        `${p.title} — ${p.missing}/${p.total} sans alt (${p.handle})`
+      ),
+    });
+  }
+
+  return {
+    name: 'Images produits (Shopify)',
+    score: calculateCategoryScore(checks),
+    checks,
+  };
 }
 
 function calculateCategoryScore(checks) {

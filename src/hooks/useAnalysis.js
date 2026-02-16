@@ -9,7 +9,7 @@ export function useAnalysis() {
   const cache = useRef({});
   const lastUrl = useRef('');
 
-  const analyze = async (url, type) => {
+  const analyze = async (url, type, shopifyConfig) => {
     lastUrl.current = url;
     const cacheKey = `${url}:${type}`;
     if (cache.current[cacheKey]) {
@@ -21,10 +21,16 @@ export function useAnalysis() {
     setErrors((prev) => ({ ...prev, [type]: null }));
 
     try {
+      const body = { url };
+      // Pass Shopify credentials to SEO analyzer for product image audit
+      if (shopifyConfig?.store && shopifyConfig?.accessToken) {
+        body.store = shopifyConfig.store;
+        body.accessToken = shopifyConfig.accessToken;
+      }
       const response = await fetch(`/.netlify/functions/analyze-${type}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -74,7 +80,7 @@ export function useAnalysis() {
           : fixAction.id.startsWith('i18n-') ? 'i18n'
           : 'ai';
         delete cache.current[`${url}:${type}`];
-        setTimeout(() => analyze(url, type), 2000);
+        setTimeout(() => analyze(url, type, shopifyConfig), 2000);
       }
     } catch (error) {
       setFixResults((prev) => ({ ...prev, [fixAction.id]: { success: false, error: error.message } }));
