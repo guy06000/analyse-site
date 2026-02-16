@@ -4,7 +4,7 @@ import { GlobalScore } from './GlobalScore';
 import { ScoreCard } from './ScoreCard';
 import { CheckDetails } from './CheckDetails';
 
-export function AnalysisPanel({ data, loading, error }) {
+export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixingId, fixResults }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   if (loading) {
@@ -55,7 +55,13 @@ export function AnalysisPanel({ data, loading, error }) {
 
       {selectedCategory && (
         <div className="rounded-lg border bg-card p-6">
-          <CheckDetails category={selectedCategory} />
+          <CheckDetails
+            category={selectedCategory}
+            shopifyConfig={shopifyConfig}
+            onFix={onFix}
+            fixingId={fixingId}
+            fixResults={fixResults}
+          />
         </div>
       )}
     </div>

@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
-import { Search, Globe, Bot, Languages } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Search, Globe, Bot, Languages, Settings } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AnalysisPanel } from '@/components/AnalysisPanel';
+import { ShopifyConfig } from '@/components/ShopifyConfig';
 import { useAnalysis } from '@/hooks/useAnalysis';
 
 const TABS = [
@@ -16,8 +17,24 @@ function App() {
   const [url, setUrl] = useState('');
   const [activeTab, setActiveTab] = useState('seo');
   const [submitted, setSubmitted] = useState(false);
-  const { results, loading, errors, analyze, clearCache } = useAnalysis();
+  const [showShopifyConfig, setShowShopifyConfig] = useState(false);
+  const [shopifyConfig, setShopifyConfig] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('shopifyConfig')) || {};
+    } catch {
+      return {};
+    }
+  });
+  const { results, loading, errors, analyze, clearCache, fixingId, fixResults, applyFix } = useAnalysis();
   const analyzedTabs = useRef(new Set());
+
+  // Auto-detect Shopify store from AI results
+  useEffect(() => {
+    const aiData = results.ai;
+    if (aiData?.isShopify && aiData.shopifyStore && aiData.shopifyStore !== 'detected' && !shopifyConfig.store) {
+      setShopifyConfig((prev) => ({ ...prev, store: aiData.shopifyStore }));
+    }
+  }, [results.ai]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -50,6 +67,17 @@ function App() {
     }
   };
 
+  const handleFix = (fixAction) => {
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith('http')) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+    applyFix(fixAction, shopifyConfig, normalizedUrl);
+  };
+
+  const isShopify = results.ai?.isShopify;
+  const hasCredentials = !!(shopifyConfig.store && shopifyConfig.clientId && shopifyConfig.clientSecret);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
@@ -62,6 +90,17 @@ function App() {
                 SEO, IA & Traductions
               </p>
             </div>
+            {isShopify && (
+              <Button
+                variant={showShopifyConfig ? 'default' : 'outline'}
+                size="sm"
+                className="ml-auto"
+                onClick={() => setShowShopifyConfig(!showShopifyConfig)}
+              >
+                <Settings className="mr-1 h-4 w-4" />
+                Shopify
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -80,6 +119,12 @@ function App() {
             Analyser
           </Button>
         </form>
+
+        {showShopifyConfig && (
+          <div className="mt-4">
+            <ShopifyConfig config={shopifyConfig} onChange={setShopifyConfig} />
+          </div>
+        )}
 
         <Tabs
           value={activeTab}
@@ -101,6 +146,10 @@ function App() {
                 data={results[tab.type]}
                 loading={loading[tab.type]}
                 error={errors[tab.type]}
+                shopifyConfig={hasCredentials ? shopifyConfig : null}
+                onFix={handleFix}
+                fixingId={fixingId}
+                fixResults={fixResults}
               />
             </TabsContent>
           ))}

@@ -30,18 +30,23 @@ export const handler = async (event) => {
     const $ = cheerio.load(html);
     const baseUrl = new URL(url);
 
+    const shopifyStore = detectShopifyStore($, html);
+
     const results = {
       url,
       timestamp: new Date().toISOString(),
+      isShopify: !!shopifyStore,
+      shopifyStore: shopifyStore || null,
       categories: {
         crawlers: await analyzeCrawlers(baseUrl),
         fichiers: await analyzeFichiersIA(baseUrl),
-        contenu: analyzeContenuIA($),
+        contenu: analyzeContenuIA($, response),
         citabilite: analyzeCitabilite($),
       },
     };
 
     results.score = calculateGlobalScore(results.categories);
+    applyShopifyFixes(results);
 
     return { statusCode: 200, headers, body: JSON.stringify(results) };
   } catch (error) {
@@ -57,11 +62,17 @@ async function analyzeCrawlers(baseUrl) {
   const checks = [];
   const bots = [
     { name: 'GPTBot', agent: 'OpenAI/ChatGPT' },
+    { name: 'OAI-SearchBot', agent: 'OpenAI Search' },
     { name: 'Google-Extended', agent: 'Google Gemini' },
     { name: 'ChatGPT-User', agent: 'ChatGPT Browse' },
     { name: 'PerplexityBot', agent: 'Perplexity' },
     { name: 'ClaudeBot', agent: 'Claude/Anthropic' },
     { name: 'Bytespider', agent: 'ByteDance' },
+    { name: 'Amazonbot', agent: 'Amazon/Alexa' },
+    { name: 'Applebot-Extended', agent: 'Apple Intelligence' },
+    { name: 'meta-externalagent', agent: 'Meta AI' },
+    { name: 'CCBot', agent: 'Common Crawl' },
+    { name: 'cohere-ai', agent: 'Cohere' },
   ];
 
   let robotsContent = '';
@@ -213,7 +224,7 @@ async function analyzeFichiersIA(baseUrl) {
   };
 }
 
-function analyzeContenuIA($) {
+function analyzeContenuIA($, response) {
   const checks = [];
 
   // Semantic HTML
@@ -284,6 +295,39 @@ function analyzeContenuIA($) {
       : null,
   });
 
+  // Last-Modified header (content freshness signal for AI crawlers)
+  const lastModified = response.headers.get('last-modified');
+  checks.push({
+    name: 'Fraîcheur du contenu (Last-Modified)',
+    status: lastModified ? 'success' : 'warning',
+    value: lastModified || 'Absent',
+    detail: lastModified
+      ? `Dernière modification : ${lastModified}`
+      : 'Pas de header Last-Modified — les IA ne peuvent pas évaluer la fraîcheur',
+    recommendation: !lastModified
+      ? 'Configurez le header Last-Modified pour indiquer la fraîcheur du contenu aux crawlers IA'
+      : null,
+  });
+
+  // Content length optimization for AI indexing
+  const allWords = bodyText.split(' ').filter((w) => w.length > 1);
+  const wordCount = allWords.length;
+  checks.push({
+    name: 'Longueur optimale pour IA',
+    status: wordCount >= 500 && wordCount <= 3000 ? 'success' : wordCount >= 200 ? 'warning' : 'error',
+    value: `${wordCount} mots`,
+    detail: wordCount < 200
+      ? `${wordCount} mots — trop court pour que les IA indexent efficacement (min. 500)`
+      : wordCount > 3000
+        ? `${wordCount} mots — risque de troncature par les LLM (idéal : 500-3000)`
+        : `${wordCount} mots — dans la plage optimale pour l'indexation IA (500-3000)`,
+    recommendation: wordCount < 500
+      ? 'Enrichissez le contenu (min. 500 mots) pour être correctement indexé par les IA'
+      : wordCount > 3000
+        ? 'Le contenu est long — structurez-le clairement pour éviter la troncature par les LLM'
+        : null,
+  });
+
   return {
     name: 'Qualité du contenu pour les IA',
     checks,
@@ -344,6 +388,86 @@ function analyzeCitabilite($) {
     checks,
     score: calculateCategoryScore(checks),
   };
+}
+
+function detectShopifyStore($, html) {
+  // Method 1: Shopify.shop variable in scripts
+  const shopMatch = html.match(/Shopify\.shop\s*=\s*["']([^"']+\.myshopify\.com)["']/);
+  if (shopMatch) return shopMatch[1];
+
+  // Method 2: meta tag
+  const shopifyMeta = $('meta[name="shopify-checkout-api-token"]').length > 0
+    || $('link[href*="cdn.shopify.com"]').length > 0
+    || $('script[src*="cdn.shopify.com"]').length > 0;
+
+  if (shopifyMeta) {
+    // Try to extract from any myshopify reference
+    const myshopifyMatch = html.match(/([a-z0-9-]+\.myshopify\.com)/i);
+    if (myshopifyMatch) return myshopifyMatch[1];
+    return 'detected'; // Shopify detected but store domain unknown
+  }
+
+  return null;
+}
+
+const FIX_ACTIONS = {
+  'robots.txt': {
+    id: 'robots-txt-ai',
+    label: 'Corriger robots.txt',
+    description: 'Ajouter les règles pour les bots IA dans robots.txt.liquid',
+  },
+  'llms.txt': {
+    id: 'llms-txt',
+    label: 'Créer llms.txt',
+    description: 'Créer le fichier llms.txt et configurer le redirect',
+  },
+  'llms-full.txt': {
+    id: 'llms-full-txt',
+    label: 'Créer llms-full.txt',
+    description: 'Créer le fichier llms-full.txt et configurer le redirect',
+  },
+  'Information auteur (E-E-A-T)': {
+    id: 'meta-author',
+    label: 'Ajouter meta author',
+    description: 'Injecter <meta name="author"> dans theme.liquid',
+  },
+};
+
+const SHOPIFY_FIXES = {
+  'robots.txt': 'Shopify OS 2.0 : Modifier le code > Templates > robots.txt.liquid. Ajoutez/retirez les règles pour les bots IA.',
+  'llms.txt': 'Créez un fichier llms.txt via Modifier le code > Assets > "Ajouter un nouvel asset". Puis ajoutez un redirect dans theme.liquid ou via une app de redirections.',
+  'llms-full.txt': 'Même approche que llms.txt : ajoutez via Assets du thème, puis configurez un redirect.',
+  'ai-plugin.json': 'Le dossier .well-known n\'est pas accessible sur Shopify. Alternative : utilisez un worker Cloudflare ou un sous-domaine proxy.',
+  'HTML sémantique': 'Modifier le code > Remplacez les <div> par des balises sémantiques (<main>, <article>, <section>, <nav>) dans les templates Liquid.',
+  'Contenu sans JavaScript': 'Shopify sert du HTML serveur par défaut. Évitez les apps/sections qui chargent du contenu uniquement via JS.',
+  'Structure claire du contenu': 'Personnalisateur de thème : utilisez les sections appropriées. Éditeur de contenu : structurez avec H2, paragraphes, listes.',
+  'FAQ structurée': 'Ajoutez une section FAQ dans le personnalisateur, puis incluez le schema FAQPage via un snippet Liquid. Ou app FAQ avec schema intégré (ex: "HelpCenter").',
+  'Information auteur (E-E-A-T)': 'Modifier le code > theme.liquid > Ajoutez <meta name="author" content="Votre nom"> dans le <head>. Pour les blogs : Admin > Blog > configurez l\'auteur.',
+  'Date de publication': 'Pour articles de blog : automatique. Pour pages : ajoutez <time datetime="..."> dans page.liquid ou utilisez un metafield date.',
+  'Richesse du vocabulaire': 'Enrichissez le contenu de vos pages et descriptions produits. Diversifiez le vocabulaire, utilisez des synonymes.',
+  'Fraîcheur du contenu (Last-Modified)': 'Shopify gère ce header automatiquement. Si absent, vérifiez votre proxy ou CDN (Cloudflare, etc.).',
+  'Longueur optimale pour IA': 'Enrichissez les descriptions produits et pages via le personnalisateur de thème ou Admin > Pages/Produits.',
+};
+
+const BOT_FIX = 'Shopify OS 2.0 : Modifier le code > Templates > robots.txt.liquid. Modifiez les règles User-agent / Disallow pour ce bot IA.';
+
+function applyShopifyFixes(results) {
+  for (const category of Object.values(results.categories)) {
+    for (const check of category.checks) {
+      if (check.recommendation) {
+        if (SHOPIFY_FIXES[check.name]) {
+          check.shopifyFix = SHOPIFY_FIXES[check.name];
+        } else if (/GPTBot|OAI-SearchBot|Google-Extended|ChatGPT|PerplexityBot|ClaudeBot|Bytespider|Amazonbot|Applebot|meta-externalagent|CCBot|cohere-ai/.test(check.name)) {
+          check.shopifyFix = BOT_FIX;
+        }
+
+        // Add fixAction for automatable fixes
+        if (FIX_ACTIONS[check.name]) {
+          check.fixAction = FIX_ACTIONS[check.name];
+        }
+      }
+    }
+  }
 }
 
 function calculateCategoryScore(checks) {
