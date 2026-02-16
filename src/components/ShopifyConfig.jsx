@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export function ShopifyConfig({ config, onChange }) {
-  const [showSecret, setShowSecret] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
@@ -21,8 +21,8 @@ export function ShopifyConfig({ config, onChange }) {
   };
 
   const testConnection = async () => {
-    if (!config.store || !config.clientId || !config.clientSecret) {
-      setTestResult({ success: false, message: 'Remplissez store, Client ID et Client Secret' });
+    if (!config.store || !config.accessToken) {
+      setTestResult({ success: false, message: 'Remplissez le store et l\'Access Token' });
       return;
     }
 
@@ -36,15 +36,11 @@ export function ShopifyConfig({ config, onChange }) {
         body: JSON.stringify({
           fixId: '__test__',
           store: config.store,
-          clientId: config.clientId,
-          clientSecret: config.clientSecret,
+          accessToken: config.accessToken,
         }),
       });
 
       const data = await res.json();
-      // 400 "Fix inconnu" = auth succeeded, fix ID invalid = connection OK
-      // 401 = auth failed
-      // 500 = network/other error
       if (res.status === 400) {
         setTestResult({ success: true, message: 'Connexion Shopify OK' });
       } else {
@@ -89,32 +85,25 @@ export function ShopifyConfig({ config, onChange }) {
               onChange={(e) => update('authorName', e.target.value)}
             />
           </div>
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">Client ID</label>
-            <Input
-              placeholder="Client ID de l'app custom"
-              value={config.clientId || ''}
-              onChange={(e) => update('clientId', e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">Client Secret</label>
+          <div className="sm:col-span-2">
+            <label className="text-sm font-medium text-muted-foreground">Access Token (shpat_...)</label>
             <div className="relative">
               <Input
-                type={showSecret ? 'text' : 'password'}
-                placeholder="Client Secret"
-                value={config.clientSecret || ''}
-                onChange={(e) => update('clientSecret', e.target.value)}
+                type={showToken ? 'text' : 'password'}
+                placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                value={config.accessToken || ''}
+                onChange={(e) => update('accessToken', e.target.value)}
                 className="pr-10"
               />
               <button
                 type="button"
-                onClick={() => setShowSecret(!showSecret)}
+                onClick={() => setShowToken(!showToken)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">Token permanent depuis Admin Shopify &gt; Apps &gt; votre app custom</p>
           </div>
         </div>
         <div className="flex gap-2">

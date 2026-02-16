@@ -53,8 +53,7 @@ export function useAnalysis() {
         body: JSON.stringify({
           fixId: fixAction.id,
           store: shopifyConfig.store,
-          clientId: shopifyConfig.clientId,
-          clientSecret: shopifyConfig.clientSecret,
+          accessToken: shopifyConfig.accessToken,
           siteUrl,
           authorName: shopifyConfig.authorName,
         }),

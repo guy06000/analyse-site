@@ -20,9 +20,12 @@ function App() {
   const [showShopifyConfig, setShowShopifyConfig] = useState(false);
   const [shopifyConfig, setShopifyConfig] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('shopifyConfig')) || {};
+      const saved = JSON.parse(localStorage.getItem('shopifyConfig')) || {};
+      // Pre-fill store if empty
+      if (!saved.store) saved.store = 'goldy-isis.myshopify.com';
+      return saved;
     } catch {
-      return {};
+      return { store: 'goldy-isis.myshopify.com' };
     }
   });
   const { results, loading, errors, analyze, clearCache, fixingId, fixResults, applyFix } = useAnalysis();
@@ -76,7 +79,7 @@ function App() {
   };
 
   const isShopify = results.ai?.isShopify;
-  const hasCredentials = !!(shopifyConfig.store && shopifyConfig.clientId && shopifyConfig.clientSecret);
+  const hasCredentials = !!(shopifyConfig.store && shopifyConfig.accessToken);
 
   return (
     <div className="min-h-screen bg-background">

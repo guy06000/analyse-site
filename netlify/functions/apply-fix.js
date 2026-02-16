@@ -15,17 +15,17 @@ export const handler = async (event) => {
   }
 
   try {
-    const { fixId, store, clientId, clientSecret, siteUrl, authorName } = JSON.parse(event.body);
+    const { fixId, store, accessToken, clientId, clientSecret, siteUrl, authorName } = JSON.parse(event.body);
 
-    if (!fixId || !store || !clientId || !clientSecret) {
+    if (!fixId || !store || (!accessToken && (!clientId || !clientSecret))) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Paramètres manquants : fixId, store, clientId, clientSecret requis' }),
+        body: JSON.stringify({ error: 'Paramètres manquants : fixId, store, et accessToken (ou clientId+clientSecret) requis' }),
       };
     }
 
-    const token = await getShopifyToken(store, clientId, clientSecret);
+    const token = accessToken || await getShopifyToken(store, clientId, clientSecret);
     const themeId = await getActiveThemeId(store, token);
 
     const ctx = { store, token, themeId, siteUrl, authorName };
