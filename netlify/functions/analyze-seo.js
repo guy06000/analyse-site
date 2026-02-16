@@ -187,12 +187,33 @@ function analyzeStructure($) {
   const images = $('img');
   const imagesWithAlt = $('img[alt]').filter((_, el) => $(el).attr('alt').trim().length > 0);
   const altRatio = images.length > 0 ? imagesWithAlt.length / images.length : 1;
+  const missingAltImages = [];
+  images.each((_, el) => {
+    const alt = $(el).attr('alt');
+    if (!alt || alt.trim().length === 0) {
+      const src = $(el).attr('src') || $(el).attr('data-src') || '';
+      const width = $(el).attr('width') || '';
+      const height = $(el).attr('height') || '';
+      const classes = $(el).attr('class') || '';
+      // Build a readable label
+      let label = src;
+      if (src.length > 120) label = '...' + src.slice(-100);
+      if (width || height) label += ` (${width}x${height})`;
+      // Try to identify context from parent
+      const parent = $(el).parent();
+      const parentTag = parent.prop('tagName')?.toLowerCase() || '';
+      const parentClass = parent.attr('class') || '';
+      if (parentClass) label += ` [${parentTag}.${parentClass.split(' ')[0]}]`;
+      missingAltImages.push(label);
+    }
+  });
   checks.push({
     name: 'Attributs alt des images',
     status: images.length === 0 ? 'success' : altRatio === 1 ? 'success' : altRatio >= 0.5 ? 'warning' : 'error',
     value: `${imagesWithAlt.length}/${images.length} images avec alt`,
-    detail: images.length === 0 ? 'Aucune image sur la page' : `${Math.round(altRatio * 100)}% des images ont un alt`,
-    recommendation: altRatio < 1 && images.length > 0 ? 'Ajoutez des attributs alt descriptifs à toutes les images' : null,
+    detail: images.length === 0 ? 'Aucune image sur la page' : `${Math.round(altRatio * 100)}% des images ont un attribut alt — ${missingAltImages.length} image(s) sans alt`,
+    recommendation: altRatio < 1 && images.length > 0 ? 'Ajoutez des attributs alt descriptifs à toutes les images pour le SEO et l\'accessibilité' : null,
+    detailList: missingAltImages.length > 0 ? missingAltImages : undefined,
   });
 
   // Text/HTML ratio
