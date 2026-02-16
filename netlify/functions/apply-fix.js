@@ -70,6 +70,12 @@ async function getShopifyToken(store, clientId, clientSecret) {
 
 async function getActiveThemeId(store, token) {
   const res = await shopifyFetch(store, token, '/admin/api/2024-01/themes.json');
+  if (!res.ok) {
+    const err = await res.text();
+    const error = new Error(`Erreur API Shopify (${res.status}): ${err}`);
+    error.statusCode = res.status;
+    throw error;
+  }
   const data = await res.json();
   const main = data.themes.find((t) => t.role === 'main');
   if (!main) throw new Error('Thème principal introuvable');
