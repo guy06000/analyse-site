@@ -149,6 +149,9 @@ async function executeFix(fixId, ctx) {
     'seo-open-graph': fixOpenGraph,
     'seo-twitter-card': fixTwitterCard,
     'seo-json-ld': fixJsonLd,
+    'seo-meta-keywords': fixMetaKeywords,
+    'seo-lazy-loading': fixLazyLoading,
+    'ai-date-publication': fixDatePublication,
     'i18n-html-lang': fixHtmlLang,
     'i18n-hreflang': fixHreflang,
     'i18n-content-language': fixContentLanguage,
@@ -173,13 +176,18 @@ async function fixRobotsTxt(ctx) {
 
   const aiBots = [
     'GPTBot',
+    'OAI-SearchBot',
     'Google-Extended',
     'ChatGPT-User',
     'PerplexityBot',
     'ClaudeBot',
     'Bytespider',
-    'anthropic-ai',
+    'Amazonbot',
+    'Applebot-Extended',
+    'meta-externalagent',
+    'CCBot',
     'cohere-ai',
+    'anthropic-ai',
   ];
 
   if (existing && existing.value) {
@@ -503,6 +511,75 @@ async function fixJsonLd(ctx) {
   await putAsset(store, token, themeId, 'layout/theme.liquid', content);
 
   return { success: true, fixId: 'seo-json-ld', message: 'Données structurées JSON-LD ajoutées (snippet schema-jsonld.liquid + inclusion dans theme.liquid)' };
+}
+
+// ── Additional SEO Fix handlers ──
+
+async function fixMetaKeywords(ctx) {
+  const { store, token, themeId, siteUrl } = ctx;
+  let content = await getThemeLiquid(store, token, themeId);
+
+  if (content.includes('meta name="keywords"')) {
+    return { success: true, fixId: 'seo-meta-keywords', message: 'La balise meta keywords existe déjà dans theme.liquid' };
+  }
+
+  const keywordsTag = `  <meta name="keywords" content="{{ page_title | escape }}, {{ shop.name | escape }}">`;
+  content = injectBeforeHeadClose(content, keywordsTag);
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'seo-meta-keywords', message: 'Meta keywords dynamique ajouté dans theme.liquid' };
+}
+
+async function fixLazyLoading(ctx) {
+  const { store, token, themeId } = ctx;
+
+  // Create a snippet that adds lazy loading via JS for images missing it
+  const lazySnippet = `{%- comment -%} Lazy loading — généré par Analyse Site {%- endcomment -%}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('img:not([loading])').forEach(function(img) {
+      img.setAttribute('loading', 'lazy');
+    });
+  });
+</script>
+`;
+
+  await putAsset(store, token, themeId, 'snippets/lazy-loading.liquid', lazySnippet);
+
+  let content = await getThemeLiquid(store, token, themeId);
+
+  if (content.includes("render 'lazy-loading'")) {
+    return { success: true, fixId: 'seo-lazy-loading', message: 'Snippet lazy-loading déjà inclus dans theme.liquid' };
+  }
+
+  const includeTag = `  {% render 'lazy-loading' %}`;
+  content = content.replace('</body>', includeTag + '\n</body>');
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'seo-lazy-loading', message: 'Lazy loading ajouté (snippet lazy-loading.liquid avant </body>)' };
+}
+
+// ── AI Fix handler ──
+
+async function fixDatePublication(ctx) {
+  const { store, token, themeId } = ctx;
+  let content = await getThemeLiquid(store, token, themeId);
+
+  if (content.includes('article:published_time') || content.includes('date-publication')) {
+    return { success: true, fixId: 'ai-date-publication', message: 'Les meta de date de publication existent déjà' };
+  }
+
+  const dateMeta = `  {%- if article -%}
+    <meta property="article:published_time" content="{{ article.published_at | date: '%Y-%m-%dT%H:%M:%S' }}">
+    <meta property="article:modified_time" content="{{ article.updated_at | date: '%Y-%m-%dT%H:%M:%S' }}">
+  {%- elsif product -%}
+    <meta property="article:published_time" content="{{ product.created_at | date: '%Y-%m-%dT%H:%M:%S' }}">
+    <meta property="article:modified_time" content="{{ product.updated_at | date: '%Y-%m-%dT%H:%M:%S' }}">
+  {%- endif -%}`;
+  content = injectBeforeHeadClose(content, dateMeta);
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'ai-date-publication', message: 'Meta dates de publication ajoutées (article:published_time + article:modified_time)' };
 }
 
 // ── i18n Fix handlers ──

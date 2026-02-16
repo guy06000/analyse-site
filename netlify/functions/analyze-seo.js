@@ -719,6 +719,8 @@ const FIX_ACTIONS = {
   'Open Graph': { id: 'seo-open-graph', label: 'Ajouter les balises Open Graph' },
   'Twitter Card': { id: 'seo-twitter-card', label: 'Ajouter les balises Twitter Card' },
   'JSON-LD / Schema.org': { id: 'seo-json-ld', label: 'Ajouter les données structurées JSON-LD' },
+  'Meta keywords': { id: 'seo-meta-keywords', label: 'Ajouter les meta keywords' },
+  'Lazy loading des images': { id: 'seo-lazy-loading', label: 'Ajouter le lazy loading' },
 };
 
 const SHOPIFY_FIXES = {

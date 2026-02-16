@@ -410,6 +410,11 @@ function detectShopifyStore($, html) {
   return null;
 }
 
+const ROBOTS_FIX_ACTION = {
+  id: 'robots-txt-ai',
+  label: 'Ajouter dans robots.txt',
+};
+
 const FIX_ACTIONS = {
   'robots.txt': {
     id: 'robots-txt-ai',
@@ -431,6 +436,18 @@ const FIX_ACTIONS = {
     label: 'Ajouter meta author',
     description: 'Injecter <meta name="author"> dans theme.liquid',
   },
+  'Date de publication': {
+    id: 'ai-date-publication',
+    label: 'Ajouter meta dates',
+    description: 'Injecter article:published_time et article:modified_time dans theme.liquid',
+  },
+  // Bot-specific entries → all point to the same robots.txt fix
+  'OAI-SearchBot (OpenAI Search)': ROBOTS_FIX_ACTION,
+  'Amazonbot (Amazon/Alexa)': ROBOTS_FIX_ACTION,
+  'Applebot-Extended (Apple Intelligence)': ROBOTS_FIX_ACTION,
+  'meta-externalagent (Meta AI)': ROBOTS_FIX_ACTION,
+  'CCBot (Common Crawl)': ROBOTS_FIX_ACTION,
+  'cohere-ai (Cohere)': ROBOTS_FIX_ACTION,
 };
 
 const SHOPIFY_FIXES = {
