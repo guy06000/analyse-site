@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Globe, Bot, Languages, Settings } from 'lucide-react';
+import { Search, Globe, Bot, Languages, Settings, Eye } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AnalysisPanel } from '@/components/AnalysisPanel';
 import { ShopifyConfig } from '@/components/ShopifyConfig';
+import { VisibilityPanel } from '@/components/VisibilityPanel';
 import { useAnalysis } from '@/hooks/useAnalysis';
 
 const TABS = [
   { id: 'seo', label: 'SEO', icon: Search, type: 'seo' },
   { id: 'ai', label: 'IA / LLM', icon: Bot, type: 'ai' },
   { id: 'i18n', label: 'Traductions', icon: Languages, type: 'i18n' },
+  { id: 'visibility', label: 'Visibilité', icon: Eye, type: 'visibility' },
 ];
 
 function App() {
@@ -30,6 +32,20 @@ function App() {
   });
   const { results, loading, errors, analyze, clearCache, fixingId, fixResults, applyFix, altSaving, altResults, updateImageAlt } = useAnalysis();
   const analyzedTabs = useRef(new Set());
+  const [visibilityConfig, setVisibilityConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('visibilityConfig')) || {};
+      if (!saved.n8nWebhookUrl) saved.n8nWebhookUrl = 'https://n8n.srv756714.hstgr.cloud/webhook/visibility-scan';
+      return saved;
+    } catch {
+      return { n8nWebhookUrl: 'https://n8n.srv756714.hstgr.cloud/webhook/visibility-scan' };
+    }
+  });
+
+  // Persist visibility config
+  useEffect(() => {
+    localStorage.setItem('visibilityConfig', JSON.stringify(visibilityConfig));
+  }, [visibilityConfig]);
 
   // Auto-detect Shopify store from AI results
   useEffect(() => {
@@ -60,6 +76,7 @@ function App() {
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
+    if (tabId === 'visibility') return;
     if (submitted && !analyzedTabs.current.has(tabId)) {
       let normalizedUrl = url.trim();
       if (!normalizedUrl.startsWith('http')) {
@@ -138,7 +155,7 @@ function App() {
           onValueChange={handleTabChange}
           className="mt-6"
         >
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             {TABS.map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id} className="gap-2">
                 <tab.icon className="h-4 w-4" />
@@ -149,18 +166,25 @@ function App() {
 
           {TABS.map((tab) => (
             <TabsContent key={tab.id} value={tab.id} className="mt-4">
-              <AnalysisPanel
-                data={results[tab.type]}
-                loading={loading[tab.type]}
-                error={errors[tab.type]}
-                shopifyConfig={hasCredentials ? shopifyConfig : null}
-                onFix={handleFix}
-                fixingId={fixingId}
-                fixResults={fixResults}
-                onSaveAlt={handleSaveAlt}
-                altSaving={altSaving}
-                altResults={altResults}
-              />
+              {tab.type === 'visibility' ? (
+                <VisibilityPanel
+                  config={visibilityConfig}
+                  onConfigChange={setVisibilityConfig}
+                />
+              ) : (
+                <AnalysisPanel
+                  data={results[tab.type]}
+                  loading={loading[tab.type]}
+                  error={errors[tab.type]}
+                  shopifyConfig={hasCredentials ? shopifyConfig : null}
+                  onFix={handleFix}
+                  fixingId={fixingId}
+                  fixResults={fixResults}
+                  onSaveAlt={handleSaveAlt}
+                  altSaving={altSaving}
+                  altResults={altResults}
+                />
+              )}
             </TabsContent>
           ))}
         </Tabs>
