@@ -53,12 +53,12 @@ function DetailList({ items }) {
         className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        {open ? 'Masquer' : 'Voir'} les {items.length} pages
+        {open ? 'Masquer' : 'Voir'} les {items.length} détails
       </button>
       {open && (
-        <ul className="mt-1.5 max-h-60 overflow-y-auto rounded border bg-muted/30 px-3 py-2 text-sm space-y-0.5">
+        <ul className="mt-1.5 max-h-80 overflow-y-auto rounded border bg-muted/30 px-3 py-2 text-sm space-y-0.5">
           {items.map((item, i) => (
-            <li key={i} className="text-muted-foreground">{item}</li>
+            <li key={i} className={`whitespace-pre-line ${item.startsWith('✓') ? 'text-green-600' : item.startsWith('✗') ? 'text-red-500' : item.startsWith('💡') || item.startsWith('⚠️') ? 'text-amber-600' : 'text-muted-foreground'}`}>{item}</li>
           ))}
         </ul>
       )}
@@ -386,7 +386,7 @@ export function CheckDetails({ category, shopifyConfig, onFix, fixingId, fixResu
                   />
                 )}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground break-all">
+              <p className="mt-1 text-sm text-muted-foreground break-all whitespace-pre-line">
                 {check.detail}
               </p>
               <DetailList items={check.detailList} />
@@ -400,9 +400,9 @@ export function CheckDetails({ category, shopifyConfig, onFix, fixingId, fixResu
               <TranslationTasks tasks={check.translationTasks} />
               <DetailCards cards={check.detailCards} />
               {check.recommendation && (
-                <p className="mt-1 text-sm text-blue-600 dark:text-blue-400">
+                <div className="mt-1 text-sm text-blue-600 dark:text-blue-400 whitespace-pre-line">
                   → {check.recommendation}
-                </p>
+                </div>
               )}
               {check.shopifyFix && (
                 <div className="mt-1.5 flex items-start gap-1.5 rounded bg-emerald-50 px-2 py-1.5 dark:bg-emerald-950">

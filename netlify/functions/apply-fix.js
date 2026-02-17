@@ -152,6 +152,9 @@ async function executeFix(fixId, ctx) {
     'seo-meta-keywords': fixMetaKeywords,
     'seo-lazy-loading': fixLazyLoading,
     'ai-date-publication': fixDatePublication,
+    'ai-semantic-html': fixSemanticHtml,
+    'ai-faq-schema': fixFaqSchema,
+    'ai-plugin-json': fixAiPluginJson,
     'i18n-html-lang': fixHtmlLang,
     'i18n-hreflang': fixHreflang,
     'i18n-content-language': fixContentLanguage,
@@ -580,6 +583,134 @@ async function fixDatePublication(ctx) {
   await putAsset(store, token, themeId, 'layout/theme.liquid', content);
 
   return { success: true, fixId: 'ai-date-publication', message: 'Meta dates de publication ajoutées (article:published_time + article:modified_time)' };
+}
+
+// ── AI Fix handlers (semantic, FAQ, ai-plugin.json) ──
+
+async function fixSemanticHtml(ctx) {
+  const { store, token, themeId } = ctx;
+  let content = await getThemeLiquid(store, token, themeId);
+
+  // Check if <main> already exists
+  if (content.includes('<main') && content.includes('</main>')) {
+    return { success: true, fixId: 'ai-semantic-html', message: 'La balise <main> existe déjà dans theme.liquid' };
+  }
+
+  // Find {{ content_for_layout }} and wrap it with <main>
+  if (!content.includes('content_for_layout')) {
+    throw new Error('Variable {{ content_for_layout }} introuvable dans theme.liquid');
+  }
+
+  // Wrap content_for_layout with <main role="main">
+  content = content.replace(
+    /(\{\{-?\s*content_for_layout\s*-?\}\})/,
+    '<main role="main" aria-label="Contenu principal">\n      $1\n    </main>'
+  );
+
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'ai-semantic-html', message: 'Balise <main role="main"> ajoutée autour du contenu principal dans theme.liquid' };
+}
+
+async function fixFaqSchema(ctx) {
+  const { store, token, themeId } = ctx;
+
+  const faqSnippet = `{%- comment -%} FAQ Schema (FAQPage) — généré par Analyse Site {%- endcomment -%}
+{%- if template == 'index' or template contains 'page' -%}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Quels produits proposez-vous ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Découvrez notre catalogue complet sur {{ shop.url }}/collections/all"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Comment passer commande ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Ajoutez vos articles au panier puis suivez les étapes de paiement sécurisé."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Quels sont les délais de livraison ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Les délais varient selon votre localisation. Consultez notre page livraison pour plus de détails."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Comment contacter le service client ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Contactez-nous via notre page contact : {{ shop.url }}/pages/contact"
+      }
+    }
+  ]
+}
+</script>
+{%- endif -%}
+`;
+
+  await putAsset(store, token, themeId, 'snippets/faq-schema.liquid', faqSnippet);
+
+  let content = await getThemeLiquid(store, token, themeId);
+
+  if (content.includes("render 'faq-schema'")) {
+    return { success: true, fixId: 'ai-faq-schema', message: 'Snippet faq-schema déjà inclus dans theme.liquid' };
+  }
+
+  const includeTag = `  {% render 'faq-schema' %}`;
+  content = injectBeforeHeadClose(content, includeTag);
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'ai-faq-schema', message: 'FAQ structurée (FAQPage schema) ajoutée — le cache Shopify peut mettre 1-2 min à se rafraîchir. Personnalisez les questions dans snippets/faq-schema.liquid' };
+}
+
+async function fixAiPluginJson(ctx) {
+  const { store, token, themeId, siteUrl } = ctx;
+  const baseUrl = siteUrl || `https://${store}`;
+  const siteName = siteUrl ? new URL(siteUrl).hostname.replace('www.', '') : store.replace('.myshopify.com', '');
+
+  const content = JSON.stringify({
+    schema_version: 'v1',
+    name_for_human: siteName,
+    name_for_model: siteName.replace(/[^a-zA-Z0-9]/g, '_'),
+    description_for_human: `Boutique en ligne ${siteName}`,
+    description_for_model: `Online store ${siteName}. Browse products, collections, and pages.`,
+    auth: { type: 'none' },
+    api: {
+      type: 'openapi',
+      url: `${baseUrl}/sitemap.xml`,
+    },
+    logo_url: `${baseUrl}/favicon.ico`,
+    contact_email: '',
+    legal_info_url: `${baseUrl}/policies/terms-of-service`,
+  }, null, 2);
+
+  await putAsset(store, token, themeId, 'assets/ai-plugin.json', content);
+
+  // Shopify ne supporte pas les redirects vers .well-known/
+  // On crée le redirect depuis /ai-plugin.json à la place
+  const assetUrl = `https://${store}/cdn/shop/t/${themeId}/assets/ai-plugin.json`;
+  await createRedirect(store, token, '/ai-plugin.json', assetUrl);
+
+  // Tenter aussi .well-known (peut échouer silencieusement sur Shopify)
+  try {
+    await createRedirect(store, token, '/.well-known/ai-plugin.json', assetUrl);
+  } catch {
+    // Attendu — Shopify bloque souvent les chemins .well-known
+  }
+
+  return { success: true, fixId: 'ai-plugin-json', message: 'ai-plugin.json créé — accessible via /ai-plugin.json (Shopify bloque .well-known)' };
 }
 
 // ── i18n Fix handlers ──
