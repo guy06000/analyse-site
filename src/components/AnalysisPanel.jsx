@@ -4,7 +4,7 @@ import { GlobalScore } from './GlobalScore';
 import { ScoreCard } from './ScoreCard';
 import { CheckDetails } from './CheckDetails';
 
-export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixingId, fixResults }) {
+export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixingId, fixResults, onSaveAlt, altSaving, altResults }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   if (loading) {
@@ -61,6 +61,9 @@ export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixi
             onFix={onFix}
             fixingId={fixingId}
             fixResults={fixResults}
+            onSaveAlt={onSaveAlt}
+            altSaving={altSaving}
+            altResults={altResults}
           />
         </div>
       )}

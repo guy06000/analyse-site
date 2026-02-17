@@ -28,7 +28,7 @@ function App() {
       return { store: 'goldy-isis.myshopify.com' };
     }
   });
-  const { results, loading, errors, analyze, clearCache, fixingId, fixResults, applyFix } = useAnalysis();
+  const { results, loading, errors, analyze, clearCache, fixingId, fixResults, applyFix, altSaving, altResults, updateImageAlt } = useAnalysis();
   const analyzedTabs = useRef(new Set());
 
   // Auto-detect Shopify store from AI results
@@ -76,6 +76,10 @@ function App() {
       normalizedUrl = `https://${normalizedUrl}`;
     }
     applyFix(fixAction, shopifyConfig, normalizedUrl);
+  };
+
+  const handleSaveAlt = (productId, imageId, alt) => {
+    updateImageAlt(shopifyConfig.store, shopifyConfig.accessToken, productId, imageId, alt);
   };
 
   const isShopify = results.ai?.isShopify;
@@ -153,6 +157,9 @@ function App() {
                 onFix={handleFix}
                 fixingId={fixingId}
                 fixResults={fixResults}
+                onSaveAlt={handleSaveAlt}
+                altSaving={altSaving}
+                altResults={altResults}
               />
             </TabsContent>
           ))}

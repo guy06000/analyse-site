@@ -13,8 +13,11 @@ import {
   ExternalLink,
   Wrench,
   Loader2,
+  ImageIcon,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const statusConfig = {
   success: {
@@ -219,6 +222,96 @@ function DetailCards({ cards }) {
   );
 }
 
+/* ── Editable image alt text ── */
+function ImageAltEditor({ images, shopifyConfig, onSaveAlt, altSaving, altResults }) {
+  const [open, setOpen] = useState(false);
+  const [altValues, setAltValues] = useState({});
+
+  if (!images || images.length === 0 || !shopifyConfig || !onSaveAlt) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        <ImageIcon className="h-3.5 w-3.5" />
+        {open ? 'Masquer' : 'Modifier'} les alt ({images.length} images)
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2 max-h-[500px] overflow-y-auto">
+          {images.map((img) => {
+            const isSaving = altSaving?.[img.imageId];
+            const result = altResults?.[img.imageId];
+            const saved = result?.success;
+
+            return (
+              <div
+                key={img.imageId}
+                className="flex items-center gap-3 rounded-lg border p-2 bg-muted/30"
+              >
+                {/* Thumbnail */}
+                <img
+                  src={img.src}
+                  alt=""
+                  className="h-[60px] w-[60px] rounded border object-cover shrink-0 bg-white"
+                  loading="lazy"
+                />
+
+                {/* Info + input */}
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground truncate">{img.productTitle}</span>
+                    <span className="shrink-0">pos. {img.position}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      placeholder="Texte alternatif..."
+                      value={altValues[img.imageId] ?? ''}
+                      onChange={(e) =>
+                        setAltValues((prev) => ({ ...prev, [img.imageId]: e.target.value }))
+                      }
+                      disabled={saved || isSaving}
+                      className="h-8 text-sm flex-1"
+                    />
+                    {saved ? (
+                      <span className="inline-flex items-center gap-1 text-sm text-green-600 font-medium shrink-0">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50 shrink-0"
+                        onClick={() =>
+                          onSaveAlt(img.productId, img.imageId, altValues[img.imageId] || '')
+                        }
+                        disabled={isSaving || !altValues[img.imageId]?.trim()}
+                      >
+                        {isSaving ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Save className="h-3 w-3" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  {result && !result.success && result.error && (
+                    <p className="text-xs text-red-500">{result.error}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Fix button component ── */
 function FixButton({ fixAction, shopifyConfig, onFix, fixingId, fixResults }) {
   if (!fixAction || !shopifyConfig || !onFix) return null;
@@ -264,7 +357,7 @@ function FixButton({ fixAction, shopifyConfig, onFix, fixingId, fixResults }) {
 }
 
 /* ── Main component ── */
-export function CheckDetails({ category, shopifyConfig, onFix, fixingId, fixResults }) {
+export function CheckDetails({ category, shopifyConfig, onFix, fixingId, fixResults, onSaveAlt, altSaving, altResults }) {
   return (
     <div className="space-y-3">
       <h3 className="text-lg font-semibold">{category.name}</h3>
@@ -297,6 +390,13 @@ export function CheckDetails({ category, shopifyConfig, onFix, fixingId, fixResu
                 {check.detail}
               </p>
               <DetailList items={check.detailList} />
+              <ImageAltEditor
+                images={check.editableImages}
+                shopifyConfig={shopifyConfig}
+                onSaveAlt={onSaveAlt}
+                altSaving={altSaving}
+                altResults={altResults}
+              />
               <TranslationTasks tasks={check.translationTasks} />
               <DetailCards cards={check.detailCards} />
               {check.recommendation && (

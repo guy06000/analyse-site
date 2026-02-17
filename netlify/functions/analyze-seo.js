@@ -849,6 +849,7 @@ async function analyzeShopifyImages(store, accessToken) {
 
   // Analyze images
   const productsWithMissingAlt = [];
+  const editableImages = [];
   let totalImages = 0;
   let missingAlt = 0;
 
@@ -871,6 +872,19 @@ async function analyzeShopifyImages(store, accessToken) {
           return `${src} (position ${img.position})`;
         }),
       });
+
+      for (const img of missing) {
+        // Use Shopify CDN _small suffix for thumbnails
+        const thumbSrc = img.src ? img.src.replace(/(\.\w+)(\?|$)/, '_small$1$2') : '';
+        editableImages.push({
+          productId: product.id,
+          imageId: img.id,
+          productTitle: product.title,
+          src: thumbSrc,
+          srcFull: img.src || '',
+          position: img.position,
+        });
+      }
     }
   }
 
@@ -891,6 +905,7 @@ async function analyzeShopifyImages(store, accessToken) {
           p.images.map((img) => `${p.title} — ${img}`)
         )
       : undefined,
+    editableImages: editableImages.length > 0 ? editableImages : undefined,
   });
 
   // Per-product breakdown for products with many missing
