@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Trophy, Medal, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { Trophy, Medal, ChevronDown, ChevronUp, Eye, EyeOff, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 const LLM_COLORS = {
@@ -14,16 +14,26 @@ const LLM_COLORS = {
   'Grok': 'bg-red-100 text-red-800',
 };
 
-// Noms de marques et domaines à détecter comme "nous"
+// Nos 3 marques distinctes
 const OUR_BRANDS = [
-  'isis n gold', 'isisingold', 'isisngold', 'goldy isis', 'goldy-isis',
-  'ma formation strass', 'ma-formation-strass',
+  {
+    name: 'ISIS n GOLD',
+    keywords: ['isis n gold', 'isisingold', 'isisngold', 'goldy isis', 'goldy-isis', 'goldy isis'],
+    domains: ['isisngold.com', 'isisingold.com', 'isisngold.fr', 'isisingold.fr', 'goldy-isis.myshopify.com'],
+  },
+  {
+    name: 'Ma Formation Strass',
+    keywords: ['ma formation strass', 'ma-formation-strass'],
+    domains: ['ma-formation-strass.com'],
+  },
+  {
+    name: 'Strass Dentaires FR',
+    keywords: ['strass-dentaires.fr', 'strass dentaires fr'],
+    domains: ['strass-dentaires.fr'],
+  },
 ];
-const OUR_DOMAINS = [
-  'isisngold.com', 'isisingold.com', 'goldy-isis.myshopify.com',
-  'ma-formation-strass.com', 'isisngold.fr', 'isisingold.fr',
-  'strass-dentaires.fr',
-];
+
+const ALL_OUR_DOMAINS = OUR_BRANDS.flatMap(b => b.domains);
 
 // Mapping concurrents : domaines → nom affiché
 const COMPETITOR_ALIASES = {
@@ -61,12 +71,38 @@ function extractDomain(url) {
 }
 
 function isOurDomain(domain) {
-  return OUR_DOMAINS.some(d => domain.includes(d.replace('www.', '')));
+  return ALL_OUR_DOMAINS.some(d => domain.includes(d.replace('www.', '')));
 }
 
 function getCompetitorName(domain) {
   const full = domain.startsWith('www.') ? domain : `www.${domain}`;
   return COMPETITOR_ALIASES[domain] || COMPETITOR_ALIASES[full] || COMPETITOR_ALIASES[domain.replace('www.', '')] || domain;
+}
+
+/** Détecte quelle(s) de nos marques sont mentionnées dans un résultat */
+function detectOurBrands(result) {
+  const found = new Set();
+  const mentionText = (result.mention_exact_text || '').toLowerCase();
+  const responseText = (result.response_text || '').toLowerCase();
+  const citationUrls = (result.citations_urls || '').toLowerCase();
+
+  for (const brand of OUR_BRANDS) {
+    // Vérifier dans le texte de mention exact
+    for (const kw of brand.keywords) {
+      if (mentionText.includes(kw)) { found.add(brand.name); break; }
+    }
+    // Vérifier dans les URLs de citations
+    for (const domain of brand.domains) {
+      if (citationUrls.includes(domain)) { found.add(brand.name); break; }
+    }
+    // Si pas trouvé, vérifier dans la réponse complète
+    if (!found.has(brand.name)) {
+      for (const kw of brand.keywords) {
+        if (responseText.includes(kw)) { found.add(brand.name); break; }
+      }
+    }
+  }
+  return found;
 }
 
 function RankBadge({ rank }) {
@@ -101,25 +137,42 @@ export function CompetitorRanking({ scores, results }) {
     const latest = results.filter(r => r.date_scan === latestDate);
     const llmNames = [...new Set(latest.map(r => r.llm_name).filter(Boolean))];
 
-    // Collecter les données par concurrent depuis les citations
-    const competitors = {}; // name → { mentions per llm, citation count, etc }
-    const ourData = {};     // llm → { mentions, cited, totalPrompts, totalScore }
-
-    for (const llm of llmNames) {
-      ourData[llm] = { mentions: 0, cited: 0, totalPrompts: 0, totalScore: 0 };
+    // Initialiser nos 3 marques
+    const ourBrands = {};
+    for (const brand of OUR_BRANDS) {
+      ourBrands[brand.name] = { llms: {}, totalMentions: 0, totalCited: 0 };
+      for (const llm of llmNames) {
+        ourBrands[brand.name].llms[llm] = { mentions: 0, cited: 0, prompts: 0 };
+      }
     }
+
+    // Concurrents
+    const competitors = {};
+
+    // Total de prompts par LLM
+    const promptsPerLlm = {};
+    for (const llm of llmNames) promptsPerLlm[llm] = 0;
 
     for (const r of latest) {
       const llm = r.llm_name;
       if (!llm) continue;
+      promptsPerLlm[llm]++;
 
-      ourData[llm].totalPrompts++;
-      if (r.mention_detected === 'oui') {
-        ourData[llm].mentions++;
-        ourData[llm].totalScore += r.visibility_score || 0;
-      }
-      if (r.site_in_citations === 'oui') {
-        ourData[llm].cited++;
+      // Détecter quelles de NOS marques sont mentionnées
+      const detectedBrands = detectOurBrands(r);
+      const citationUrls = (r.citations_urls || '').toLowerCase();
+
+      for (const brandName of detectedBrands) {
+        ourBrands[brandName].llms[llm].mentions++;
+        ourBrands[brandName].totalMentions++;
+
+        // Vérifier si notre domaine est dans les citations
+        const brand = OUR_BRANDS.find(b => b.name === brandName);
+        const hasCitation = brand.domains.some(d => citationUrls.includes(d));
+        if (hasCitation) {
+          ourBrands[brandName].llms[llm].cited++;
+          ourBrands[brandName].totalCited++;
+        }
       }
 
       // Extraire les concurrents depuis citations_urls
@@ -135,30 +188,20 @@ export function CompetitorRanking({ scores, results }) {
         seenInThisResult.add(name);
 
         if (!competitors[name]) {
-          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0, totalCitations: 0 };
+          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0 };
           for (const l of llmNames) {
-            competitors[name].llms[l] = { mentions: 0, prompts: 0 };
+            competitors[name].llms[l] = { mentions: 0 };
           }
         }
         competitors[name].domains.add(domain);
         competitors[name].llms[llm].mentions++;
         competitors[name].totalMentions++;
-        competitors[name].totalCitations++;
-      }
-
-      // Aussi compter le nombre total de prompts par LLM pour chaque concurrent
-      for (const name of Object.keys(competitors)) {
-        if (competitors[name].llms[llm]) {
-          competitors[name].llms[llm].prompts = ourData[llm].totalPrompts;
-        }
       }
     }
 
-    // Mettre à jour le nombre de prompts pour chaque LLM
-    for (const comp of Object.values(competitors)) {
-      for (const llm of llmNames) {
-        comp.llms[llm].prompts = ourData[llm].totalPrompts;
-      }
+    // Mettre à jour prompts par LLM
+    for (const brand of Object.values(ourBrands)) {
+      for (const llm of llmNames) brand.llms[llm].prompts = promptsPerLlm[llm];
     }
 
     // Aussi utiliser competitors_data des scores si disponible
@@ -169,13 +212,12 @@ export function CompetitorRanking({ scores, results }) {
       try { compData = s.competitors_data ? JSON.parse(s.competitors_data) : {}; } catch { /* */ }
       for (const [name, info] of Object.entries(compData)) {
         if (!competitors[name]) {
-          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0, totalCitations: 0 };
+          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0 };
           for (const l of llmNames) {
-            competitors[name].llms[l] = { mentions: 0, prompts: ourData[l]?.totalPrompts || 0 };
+            competitors[name].llms[l] = { mentions: 0 };
           }
         }
         if (competitors[name].llms[s.llm_name]) {
-          // Prendre le max entre extraction citations et competitors_data
           const existing = competitors[name].llms[s.llm_name].mentions;
           competitors[name].llms[s.llm_name].mentions = Math.max(existing, info.mentions || 0);
           competitors[name].totalMentions = Object.values(competitors[name].llms)
@@ -184,66 +226,85 @@ export function CompetitorRanking({ scores, results }) {
       }
     }
 
-    // Calculer un score de visibilité pour chaque concurrent
-    const calcScore = (llmData) => {
+    // Calculer les scores
+    const calcRate = (llmData) => {
       let total = 0;
       let count = 0;
       for (const [, info] of Object.entries(llmData)) {
-        if (info.prompts === 0) continue;
-        const rate = (info.mentions / info.prompts) * 100;
+        const prompts = info.prompts || promptsPerLlm[Object.keys(promptsPerLlm)[0]] || 1;
+        const rate = (info.mentions / prompts) * 100;
         total += rate;
         count++;
       }
       return count > 0 ? Math.round(total / count) : 0;
     };
 
-    // Score de notre marque
-    const ourScore = {};
-    let ourGlobalMentions = 0;
-    let ourGlobalPrompts = 0;
-    let ourGlobalCited = 0;
-    for (const llm of llmNames) {
-      const d = ourData[llm];
-      ourScore[llm] = d.totalPrompts > 0 ? Math.round((d.mentions / d.totalPrompts) * 100) : 0;
-      ourGlobalMentions += d.mentions;
-      ourGlobalPrompts += d.totalPrompts;
-      ourGlobalCited += d.cited;
-    }
-    const ourGlobalRate = ourGlobalPrompts > 0 ? Math.round((ourGlobalMentions / ourGlobalPrompts) * 100) : 0;
+    // Construire nos marques formatées
+    const ourBrandsFormatted = OUR_BRANDS.map(brand => {
+      const data = ourBrands[brand.name];
+      return {
+        name: brand.name,
+        domains: brand.domains,
+        isOurs: true,
+        totalMentions: data.totalMentions,
+        totalCited: data.totalCited,
+        score: calcRate(data.llms),
+        llmDetails: llmNames.map(llm => ({
+          llm,
+          mentions: data.llms[llm].mentions,
+          cited: data.llms[llm].cited,
+          prompts: data.llms[llm].prompts,
+          rate: data.llms[llm].prompts > 0
+            ? Math.round((data.llms[llm].mentions / data.llms[llm].prompts) * 100)
+            : 0,
+        })),
+      };
+    });
 
-    // Trier concurrents par totalMentions
-    const sorted = Object.entries(competitors)
+    // Construire concurrents formatés
+    const competitorsFormatted = Object.entries(competitors)
       .map(([name, info]) => ({
         name,
         domains: [...(info.domains || [])],
+        isOurs: false,
         totalMentions: info.totalMentions,
-        llms: info.llms,
-        score: calcScore(info.llms),
+        totalCited: 0,
+        score: (() => {
+          let total = 0;
+          let count = 0;
+          for (const llm of llmNames) {
+            const mentions = info.llms[llm]?.mentions || 0;
+            const prompts = promptsPerLlm[llm] || 1;
+            total += (mentions / prompts) * 100;
+            count++;
+          }
+          return count > 0 ? Math.round(total / count) : 0;
+        })(),
         llmDetails: llmNames.map(llm => ({
           llm,
           mentions: info.llms[llm]?.mentions || 0,
-          prompts: info.llms[llm]?.prompts || 0,
-          rate: info.llms[llm]?.prompts > 0
-            ? Math.round((info.llms[llm].mentions / info.llms[llm].prompts) * 100)
+          cited: 0,
+          prompts: promptsPerLlm[llm] || 0,
+          rate: promptsPerLlm[llm] > 0
+            ? Math.round(((info.llms[llm]?.mentions || 0) / promptsPerLlm[llm]) * 100)
             : 0,
         })),
       }))
       .sort((a, b) => b.score - a.score || b.totalMentions - a.totalMentions);
 
+    // Score global combiné de nos 3 marques (pour la comparaison "devant nous")
+    const ourBestScore = Math.max(...ourBrandsFormatted.map(b => b.score), 0);
+
     return {
-      competitors: sorted,
+      ourBrands: ourBrandsFormatted,
+      competitors: competitorsFormatted,
       llmNames,
-      ourData,
-      ourScore,
-      ourGlobalRate,
-      ourGlobalMentions,
-      ourGlobalPrompts,
-      ourGlobalCited,
-      latestDate,
+      promptsPerLlm,
+      ourBestScore,
     };
   }, [scores, results]);
 
-  if (!data || !data.competitors.length) return null;
+  if (!data) return null;
 
   const visible = showAll ? data.competitors : data.competitors.slice(0, 10);
 
@@ -262,7 +323,7 @@ export function CompetitorRanking({ scores, results }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border p-2 text-left text-xs font-medium text-muted-foreground bg-muted/30 min-w-[140px]">
+              <th className="border p-2 text-left text-xs font-medium text-muted-foreground bg-muted/30 min-w-[160px]">
                 Marque
               </th>
               <th className="border p-2 text-center text-xs font-medium text-muted-foreground bg-muted/30 min-w-[80px]">
@@ -279,46 +340,53 @@ export function CompetitorRanking({ scores, results }) {
             </tr>
           </thead>
           <tbody>
-            {/* Notre marque en premier (surlignée) */}
-            <tr className="bg-primary/5 font-medium border-b-2 border-primary/20">
-              <td className="border p-2 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Eye className="h-3.5 w-3.5 text-primary" />
-                  <span className="font-bold">ISIS n GOLD</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-                  <p>isisngold.com</p>
-                  <p>ma-formation-strass.com</p>
-                  <p>strass-dentaires.fr</p>
-                </div>
-              </td>
-              <td className="border p-2">
-                <ScoreBar score={data.ourGlobalRate} />
-              </td>
-              <td className="border p-2 text-center">
-                <span className="font-bold">{data.ourGlobalMentions}</span>
-                <span className="text-xs text-muted-foreground">/{data.ourGlobalPrompts}</span>
-                {data.ourGlobalCited > 0 && (
-                  <p className="text-[10px] text-green-600">{data.ourGlobalCited} citations</p>
-                )}
-              </td>
-              {data.llmNames.map(llm => {
-                const d = data.ourData[llm];
-                const rate = d.totalPrompts > 0 ? Math.round((d.mentions / d.totalPrompts) * 100) : 0;
-                return (
-                  <td key={llm} className="border p-2 text-center">
-                    <span className={`text-sm font-bold ${rate >= 50 ? 'text-green-600' : rate > 0 ? 'text-orange-500' : 'text-red-400'}`}>
-                      {rate}%
-                    </span>
-                    <p className="text-[10px] text-muted-foreground">{d.mentions}/{d.totalPrompts}</p>
+            {/* === NOS 3 MARQUES === */}
+            {data.ourBrands.map((brand, idx) => (
+              <tr
+                key={brand.name}
+                className={`bg-primary/5 font-medium ${idx === data.ourBrands.length - 1 ? 'border-b-2 border-primary/30' : ''}`}
+              >
+                <td className="border p-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+                    <span className="font-bold">{brand.name}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 ml-5">
+                    {brand.domains.map(d => <p key={d}>{d}</p>)}
+                  </div>
+                </td>
+                <td className="border p-2">
+                  <ScoreBar score={brand.score} />
+                </td>
+                <td className="border p-2 text-center">
+                  <span className="font-bold">{brand.totalMentions}</span>
+                  {brand.totalCited > 0 && (
+                    <p className="text-[10px] text-green-600">{brand.totalCited} citations</p>
+                  )}
+                </td>
+                {brand.llmDetails.map(detail => (
+                  <td key={detail.llm} className="border p-2 text-center">
+                    {detail.mentions > 0 ? (
+                      <>
+                        <span className={`text-sm font-bold ${detail.rate >= 50 ? 'text-green-600' : detail.rate > 0 ? 'text-orange-500' : 'text-red-400'}`}>
+                          {detail.rate}%
+                        </span>
+                        <p className="text-[10px] text-muted-foreground">{detail.mentions}/{detail.prompts}</p>
+                        {detail.cited > 0 && (
+                          <p className="text-[10px] text-green-600">{detail.cited} cit.</p>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-red-400 text-xs">0%</span>
+                    )}
                   </td>
-                );
-              })}
-            </tr>
+                ))}
+              </tr>
+            ))}
 
-            {/* Concurrents */}
+            {/* === CONCURRENTS === */}
             {visible.map((comp, i) => {
-              const isAboveUs = comp.score > data.ourGlobalRate;
+              const isAboveUs = comp.score > data.ourBestScore;
               return (
                 <tr key={comp.name} className={isAboveUs ? 'bg-red-50/50' : ''}>
                   <td className="border p-2 text-xs">
@@ -374,11 +442,15 @@ export function CompetitorRanking({ scores, results }) {
 
       {/* Légende */}
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>Score = taux moyen de citation par les LLMs.</span>
+        <span className="flex items-center gap-1">
+          <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+          Nos marques
+        </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2.5 w-6 rounded bg-red-50 border border-red-200" />
           Devant nous
         </span>
+        <span>Score = taux moyen de citation par les LLMs</span>
       </div>
     </div>
   );
