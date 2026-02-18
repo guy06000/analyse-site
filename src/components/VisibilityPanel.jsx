@@ -189,6 +189,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
   } = useVisibility();
   const [showConfig, setShowConfig] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [promptFilter, setPromptFilter] = useState('all'); // all | generique | marque
 
   const hasConfig = !!(config?.airtableToken && config?.n8nWebhookUrl);
 
@@ -423,9 +424,35 @@ export function VisibilityPanel({ config, onConfigChange }) {
             </TabsContent>
 
             <TabsContent value="competitive" className="mt-4 space-y-6">
-              <CompetitorRanking scores={scores} results={results} />
-              <PromptPerformance results={results} />
-              <SentimentOverview results={results} />
+              {/* Filtre type de prompt */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Filtrer :</span>
+                {[
+                  { value: 'all', label: 'Tous les prompts' },
+                  { value: 'generique', label: 'Génériques' },
+                  { value: 'marque', label: 'Marque' },
+                ].map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant={promptFilter === opt.value ? 'default' : 'outline'}
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => setPromptFilter(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+              </div>
+              <CompetitorRanking
+                scores={scores}
+                results={promptFilter === 'all' ? results : results?.filter(r => r.type_prompt === promptFilter)}
+              />
+              <PromptPerformance
+                results={promptFilter === 'all' ? results : results?.filter(r => r.type_prompt === promptFilter)}
+              />
+              <SentimentOverview
+                results={promptFilter === 'all' ? results : results?.filter(r => r.type_prompt === promptFilter)}
+              />
               {!scores?.length && (
                 <div className="py-8 text-center text-muted-foreground">
                   <p>Lancez un scan pour voir l'analyse concurrentielle.</p>
