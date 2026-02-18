@@ -14,21 +14,24 @@ const LLM_COLORS = {
   'Grok': 'bg-red-100 text-red-800',
 };
 
-// Nos 3 marques distinctes
+// Nos 3 sites (1 marque + 2 sites SEO)
 const OUR_BRANDS = [
   {
     name: 'ISIS n GOLD',
-    keywords: ['isis n gold', 'isisingold', 'isisngold', 'goldy isis', 'goldy-isis', 'goldy isis'],
+    label: 'marque',
+    keywords: ['isis n gold', 'isis&gold', 'isisingold', 'isisngold', 'isis gold'],
     domains: ['isisngold.com', 'isisingold.com', 'isisngold.fr', 'isisingold.fr', 'goldy-isis.myshopify.com'],
   },
   {
-    name: 'Ma Formation Strass',
+    name: 'ma-formation-strass.com',
+    label: 'site SEO',
     keywords: ['ma formation strass', 'ma-formation-strass'],
     domains: ['ma-formation-strass.com'],
   },
   {
-    name: 'Strass Dentaires FR',
-    keywords: ['strass-dentaires.fr', 'strass dentaires fr'],
+    name: 'strass-dentaires.fr',
+    label: 'site SEO',
+    keywords: ['strass-dentaires.fr'],
     domains: ['strass-dentaires.fr'],
   },
 ];
@@ -350,6 +353,9 @@ export function CompetitorRanking({ scores, results }) {
                   <div className="flex items-center gap-1.5">
                     <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
                     <span className="font-bold">{brand.name}</span>
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5">
+                      {OUR_BRANDS[idx].label}
+                    </Badge>
                   </div>
                   <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 ml-5">
                     {brand.domains.map(d => <p key={d}>{d}</p>)}
@@ -444,7 +450,7 @@ export function CompetitorRanking({ scores, results }) {
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
-          Nos marques
+          Nos sites
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2.5 w-6 rounded bg-red-50 border border-red-200" />
