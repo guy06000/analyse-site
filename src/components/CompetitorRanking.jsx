@@ -22,12 +22,12 @@ const OUR_BRANDS = [
 const OUR_DOMAINS = [
   'isisngold.com', 'isisingold.com', 'goldy-isis.myshopify.com',
   'ma-formation-strass.com', 'isisngold.fr', 'isisingold.fr',
+  'strass-dentaires.fr',
 ];
 
 // Mapping concurrents : domaines → nom affiché
 const COMPETITOR_ALIASES = {
   'strassdentaires.com': 'Strass Dentaires',
-  'strass-dentaires.fr': 'Strass Dentaires',
   'www.strassdentaires.com': 'Strass Dentaires',
   'toothgemsworld.com': 'Tooth Gems World',
   'grillzparadise.com': 'Grillz Paradise',
@@ -289,6 +289,7 @@ export function CompetitorRanking({ scores, results }) {
                 <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
                   <p>isisngold.com</p>
                   <p>ma-formation-strass.com</p>
+                  <p>strass-dentaires.fr</p>
                 </div>
               </td>
               <td className="border p-2">
