@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   AlertTriangle,
   TrendingDown,
@@ -10,12 +10,15 @@ import {
   Loader2,
   Wrench,
   ArrowRight,
+  Code2,
+  Check,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { generateActions, buildGeoAdvisorContext } from '@/lib/insightActions';
 
 const GEO_ADVISOR_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/geo-advisor';
+const JSONLD_GENERATOR_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/generate-jsonld';
 
 const IMPACT_COLORS = {
   fort: 'bg-red-100 text-red-700 border-red-200',
@@ -95,19 +98,157 @@ function AiAdviceCard({ advice }) {
   );
 }
 
-function InsightCard({ insight, scores, results }) {
+function JsonLdOptimizer({ shopifyConfig }) {
+  const [state, setState] = useState('generating');
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [showCode, setShowCode] = useState(false);
+
+  const generate = useCallback(async () => {
+    setState('generating');
+    setError(null);
+    try {
+      const res = await fetch(JSONLD_GENERATOR_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+          shopUrl: `https://${shopifyConfig.store}`,
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.liquidCode) throw new Error('Pas de code Liquid genere');
+      setData(result);
+      setState('preview');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  }, [shopifyConfig]);
+
+  useEffect(() => {
+    generate();
+  }, [generate]);
+
+  const handleApply = async () => {
+    setState('applying');
+    try {
+      const res = await fetch('/.netlify/functions/apply-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fixId: 'seo-json-ld-geo',
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+          customSnippet: data.liquidCode,
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Erreur application');
+      setState('applied');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Code2 className="h-4 w-4 text-indigo-600" />
+        <span className="text-sm font-semibold text-indigo-800">JSON-LD GEO Optimizer</span>
+      </div>
+
+      {state === 'generating' && (
+        <div className="flex items-center gap-2 text-sm text-indigo-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Lecture des donnees Shopify et generation par GPT-4o...
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="space-y-2">
+          <p className="text-sm text-red-600">Erreur : {error}</p>
+          <Button variant="outline" size="sm" onClick={generate}>Reessayer</Button>
+        </div>
+      )}
+
+      {state === 'preview' && data && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {data.schemas?.map((s) => (
+              <Badge key={s} variant="outline" className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                {s}
+              </Badge>
+            ))}
+            <span className="text-xs text-muted-foreground self-center ml-1">
+              {data.schemas?.length || 0} schemas
+            </span>
+          </div>
+
+          <div>
+            <button
+              onClick={() => setShowCode(!showCode)}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
+            >
+              {showCode ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              {showCode ? 'Masquer' : 'Voir'} le code Liquid
+            </button>
+            {showCode && (
+              <pre className="mt-2 max-h-60 overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100">
+                {data.liquidCode}
+              </pre>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={handleApply}>
+              <Check className="h-3.5 w-3.5" />
+              Appliquer sur Shopify
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {state === 'applying' && (
+        <div className="flex items-center gap-2 text-sm text-indigo-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Application du snippet sur Shopify...
+        </div>
+      )}
+
+      {state === 'applied' && (
+        <div className="flex items-center gap-2 text-sm text-green-600">
+          <Check className="h-4 w-4" />
+          JSON-LD GEO applique avec succes ! Le cache Shopify peut mettre 1-2 min a se rafraichir.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightCard({ insight, scores, results, shopifyConfig }) {
   const [expanded, setExpanded] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [showJsonLdOptimizer, setShowJsonLdOptimizer] = useState(false);
 
   const actions = useMemo(
     () => generateActions(insight.type, insight.context),
     [insight.type, insight.context]
   );
 
+  const hasJsonLdAction = useMemo(
+    () => actions.some((a) => a.fixId === 'seo-json-ld'),
+    [actions]
+  );
+
   const handleAiAdvice = useCallback(async () => {
-    if (aiAdvice) return; // Deja charge
+    if (aiAdvice) return;
     setAiLoading(true);
     setAiError(null);
     try {
@@ -155,8 +296,22 @@ function InsightCard({ insight, scores, results }) {
             <ActionItem key={i} action={action} />
           ))}
 
-          {/* Bouton Conseil IA */}
-          <div className="pt-1">
+          {/* Boutons IA */}
+          <div className="pt-1 flex flex-wrap gap-2">
+            {/* JSON-LD Optimizer button */}
+            {hasJsonLdAction && shopifyConfig?.store && shopifyConfig?.accessToken && !showJsonLdOptimizer && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-indigo-700 border-indigo-300 hover:bg-indigo-50"
+                onClick={() => setShowJsonLdOptimizer(true)}
+              >
+                <Code2 className="h-3.5 w-3.5" />
+                Optimiser JSON-LD (IA)
+              </Button>
+            )}
+
+            {/* Conseil IA GEO button */}
             {!aiAdvice && !aiLoading && (
               <Button
                 variant="outline"
@@ -184,6 +339,11 @@ function InsightCard({ insight, scores, results }) {
             )}
           </div>
 
+          {/* JSON-LD Optimizer */}
+          {showJsonLdOptimizer && shopifyConfig && (
+            <JsonLdOptimizer shopifyConfig={shopifyConfig} />
+          )}
+
           {/* Resultat IA */}
           <AiAdviceCard advice={aiAdvice} />
         </div>
@@ -192,7 +352,7 @@ function InsightCard({ insight, scores, results }) {
   );
 }
 
-export function InsightsPanel({ scores, results }) {
+export function InsightsPanel({ scores, results, shopifyConfig }) {
   const insights = useMemo(() => {
     const list = [];
     if (!scores?.length) return list;
@@ -443,6 +603,7 @@ export function InsightsPanel({ scores, results }) {
             insight={insight}
             scores={scores}
             results={results}
+            shopifyConfig={shopifyConfig}
           />
         ))}
       </div>

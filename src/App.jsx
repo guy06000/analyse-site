@@ -170,6 +170,7 @@ function App() {
                 <VisibilityPanel
                   config={visibilityConfig}
                   onConfigChange={setVisibilityConfig}
+                  shopifyConfig={hasCredentials ? shopifyConfig : null}
                 />
               ) : (
                 <AnalysisPanel

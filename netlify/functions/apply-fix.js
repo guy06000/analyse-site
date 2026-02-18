@@ -15,7 +15,7 @@ export const handler = async (event) => {
   }
 
   try {
-    const { fixId, store, accessToken, clientId, clientSecret, siteUrl, authorName } = JSON.parse(event.body);
+    const { fixId, store, accessToken, clientId, clientSecret, siteUrl, authorName, customSnippet } = JSON.parse(event.body);
 
     if (!fixId || !store || (!accessToken && (!clientId || !clientSecret))) {
       return {
@@ -28,7 +28,7 @@ export const handler = async (event) => {
     const token = accessToken || await getShopifyToken(store, clientId, clientSecret);
     const themeId = await getActiveThemeId(store, token);
 
-    const ctx = { store, token, themeId, siteUrl, authorName };
+    const ctx = { store, token, themeId, siteUrl, authorName, customSnippet };
     const result = await executeFix(fixId, ctx);
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };
@@ -149,6 +149,7 @@ async function executeFix(fixId, ctx) {
     'seo-open-graph': fixOpenGraph,
     'seo-twitter-card': fixTwitterCard,
     'seo-json-ld': fixJsonLd,
+    'seo-json-ld-geo': fixJsonLdGeo,
     'seo-meta-keywords': fixMetaKeywords,
     'seo-lazy-loading': fixLazyLoading,
     'ai-date-publication': fixDatePublication,
@@ -514,6 +515,40 @@ async function fixJsonLd(ctx) {
   await putAsset(store, token, themeId, 'layout/theme.liquid', content);
 
   return { success: true, fixId: 'seo-json-ld', message: 'Données structurées JSON-LD ajoutées (snippet schema-jsonld.liquid + inclusion dans theme.liquid)' };
+}
+
+async function fixJsonLdGeo(ctx) {
+  const { store, token, themeId, customSnippet } = ctx;
+
+  if (!customSnippet) {
+    const error = new Error('customSnippet requis pour seo-json-ld-geo');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Create the GEO-optimized snippet
+  await putAsset(store, token, themeId, 'snippets/schema-jsonld-geo.liquid', customSnippet);
+
+  let content = await getThemeLiquid(store, token, themeId);
+
+  // Remove old basic JSON-LD if present (upgrade)
+  if (content.includes("render 'schema-jsonld'")) {
+    content = content.replace(/\s*\{%\s*render\s+'schema-jsonld'\s*%\}/g, '');
+  }
+
+  // Add new GEO snippet if not already present
+  if (!content.includes("render 'schema-jsonld-geo'")) {
+    const includeTag = `  {% render 'schema-jsonld-geo' %}`;
+    content = injectBeforeHeadClose(content, includeTag);
+  }
+
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return {
+    success: true,
+    fixId: 'seo-json-ld-geo',
+    message: 'JSON-LD GEO optimise applique (snippet schema-jsonld-geo.liquid). L\'ancien schema-jsonld basique a ete remplace.',
+  };
 }
 
 // ── Additional SEO Fix handlers ──

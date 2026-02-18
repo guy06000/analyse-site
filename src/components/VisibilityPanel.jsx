@@ -175,7 +175,7 @@ function ResultRow({ result }) {
   );
 }
 
-export function VisibilityPanel({ config, onConfigChange }) {
+export function VisibilityPanel({ config, onConfigChange, shopifyConfig }) {
   const {
     scores,
     results,
@@ -463,7 +463,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
             </TabsContent>
 
             <TabsContent value="evolution" className="mt-4">
-              <VisibilityEvolution scores={scores} results={results} />
+              <VisibilityEvolution scores={scores} results={results} shopifyConfig={shopifyConfig} />
             </TabsContent>
           </Tabs>
         </>
