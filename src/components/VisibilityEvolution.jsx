@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, TrendingDown, Award, BarChart3, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, Award, BarChart3, Calendar, Hash } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
@@ -87,13 +87,20 @@ export function VisibilityEvolution({ scores, results }) {
     const totalPrompts = latestScores.reduce((sum, s) => sum + (s.nb_prompts || 0), 0);
     const globalMentionRate = totalPrompts > 0 ? Math.round((totalMentions / totalPrompts) * 100) : 0;
 
+    // Rang moyen
+    const rankedScores = latestScores.filter(s => s.avg_brand_rank > 0);
+    const avgRank = rankedScores.length > 0
+      ? Math.round(rankedScores.reduce((sum, s) => sum + s.avg_brand_rank, 0) / rankedScores.length * 10) / 10
+      : 0;
+
     return {
       avgScore,
       delta,
-      bestLlm: bestLlm?.llm_name || '—',
+      bestLlm: bestLlm?.llm_name || '\u2014',
       bestLlmScore: bestLlm?.score_moyen || 0,
       mentionRate: globalMentionRate,
       nbScans: dates.length,
+      avgRank,
     };
   }, [filteredScores]);
 
@@ -128,7 +135,7 @@ export function VisibilityEvolution({ scores, results }) {
 
       {/* KPI Cards */}
       {kpis && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           {/* Score global */}
           <Card className="py-4">
             <CardContent className="px-4">
@@ -149,7 +156,7 @@ export function VisibilityEvolution({ scores, results }) {
                     )}
                   </span>
                 ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-xs text-muted-foreground">{'\u2014'}</span>
                 )}
               </div>
             </CardContent>
@@ -173,6 +180,17 @@ export function VisibilityEvolution({ scores, results }) {
               <div className="mt-1 flex items-baseline gap-1">
                 <span className="text-2xl font-bold">{kpis.mentionRate}</span>
                 <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Rang moyen */}
+          <Card className="py-4">
+            <CardContent className="px-4">
+              <p className="text-xs font-medium text-muted-foreground">Rang moyen</p>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{kpis.avgRank > 0 ? kpis.avgRank : '\u2014'}</span>
+                <Hash className="h-4 w-4 text-muted-foreground" />
               </div>
             </CardContent>
           </Card>

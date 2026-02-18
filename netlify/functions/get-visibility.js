@@ -34,7 +34,7 @@ exports.handler = async (event) => {
 
     if (action === 'results') {
       const res = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${RESULTATS_TABLE}?sort%5B0%5D%5Bfield%5D=date_scan&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=100`,
+        `https://api.airtable.com/v0/${BASE_ID}/${RESULTATS_TABLE}?sort%5B0%5D%5Bfield%5D=date_scan&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=500`,
         { headers }
       );
       const data = await res.json();
@@ -52,7 +52,7 @@ exports.handler = async (event) => {
         { headers }
       ),
       fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${RESULTATS_TABLE}?sort%5B0%5D%5Bfield%5D=date_scan&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=100`,
+        `https://api.airtable.com/v0/${BASE_ID}/${RESULTATS_TABLE}?sort%5B0%5D%5Bfield%5D=date_scan&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=500`,
         { headers }
       ),
     ]);

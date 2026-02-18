@@ -16,13 +16,20 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useVisibility } from '@/hooks/useVisibility';
 import { VisibilityEvolution } from '@/components/VisibilityEvolution';
+import { CompetitorRanking } from '@/components/CompetitorRanking';
+import { PromptPerformance } from '@/components/PromptPerformance';
+import { SentimentOverview } from '@/components/SentimentOverview';
 
 const LLM_COLORS = {
-  Perplexity: 'bg-blue-100 text-blue-800 border-blue-200',
-  OpenAI: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  Anthropic: 'bg-orange-100 text-orange-800 border-orange-200',
-  Gemini: 'bg-purple-100 text-purple-800 border-purple-200',
-  Grok: 'bg-red-100 text-red-800 border-red-200',
+  'Perplexity Sonar': 'bg-blue-100 text-blue-800 border-blue-200',
+  'Perplexity': 'bg-blue-100 text-blue-800 border-blue-200',
+  'OpenAI GPT-4o': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'OpenAI': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'Claude Sonnet': 'bg-orange-100 text-orange-800 border-orange-200',
+  'Anthropic': 'bg-orange-100 text-orange-800 border-orange-200',
+  'Gemini Pro': 'bg-purple-100 text-purple-800 border-purple-200',
+  'Gemini': 'bg-purple-100 text-purple-800 border-purple-200',
+  'Grok': 'bg-red-100 text-red-800 border-red-200',
 };
 
 function ScoreGauge({ score }) {
@@ -50,25 +57,39 @@ function LlmScoreCard({ data }) {
         ? 'text-orange-500'
         : 'text-red-500';
 
+  const trendIcon = data.tendance === 'hausse' ? '\u2191' : data.tendance === 'baisse' ? '\u2193' : '=';
+  const trendColor = data.tendance === 'hausse' ? 'text-green-500' : data.tendance === 'baisse' ? 'text-red-500' : 'text-muted-foreground';
+
   return (
     <div className={`rounded-lg border p-4 ${borderColor}`}>
       <div className="flex items-center justify-between">
         <Badge className={badgeClass}>{data.llm_name}</Badge>
-        <span className={`text-2xl font-bold ${scoreColor}`}>
-          {data.score_moyen}
-        </span>
+        <div className="flex items-baseline gap-1">
+          <span className={`text-2xl font-bold ${scoreColor}`}>{data.score_moyen}</span>
+          <span className={`text-sm font-medium ${trendColor}`}>{trendIcon}</span>
+        </div>
       </div>
       <div className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Mentions</span>
-          <span className="font-medium">
-            {data.nb_mentions}/{data.nb_prompts}
-          </span>
+          <span className="font-medium">{data.nb_mentions}/{data.nb_prompts}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Taux</span>
           <span className="font-medium">{data.taux_mention}%</span>
         </div>
+        {data.avg_brand_rank > 0 && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Rang moy.</span>
+            <span className="font-medium">{data.avg_brand_rank}</span>
+          </div>
+        )}
+        {data.top_competitor && (
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Top rival</span>
+            <span className="font-medium text-xs capitalize">{data.top_competitor}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -205,7 +226,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Eye className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Visibilite LLM</h2>
+          <h2 className="text-lg font-semibold">Visibilité LLM</h2>
         </div>
         <Button
           variant="ghost"
@@ -348,10 +369,11 @@ export function VisibilityPanel({ config, onConfigChange }) {
             </div>
           )}
 
-          {/* Sub-tabs : Dernier scan / Evolution */}
+          {/* Sub-tabs : Dernier scan / Concurrence / Evolution */}
           <Tabs defaultValue="latest" className="mt-2">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="latest">Dernier scan</TabsTrigger>
+              <TabsTrigger value="competitive">Concurrence</TabsTrigger>
               <TabsTrigger value="evolution">Evolution</TabsTrigger>
             </TabsList>
 
@@ -396,6 +418,17 @@ export function VisibilityPanel({ config, onConfigChange }) {
                     Aucun scan effectue. Lancez votre premier scan pour voir les
                     resultats.
                   </p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="competitive" className="mt-4 space-y-6">
+              <CompetitorRanking scores={scores} results={results} />
+              <PromptPerformance results={results} />
+              <SentimentOverview results={results} />
+              {!scores?.length && (
+                <div className="py-8 text-center text-muted-foreground">
+                  <p>Lancez un scan pour voir l'analyse concurrentielle.</p>
                 </div>
               )}
             </TabsContent>

@@ -110,6 +110,54 @@ export function InsightsPanel({ scores, results }) {
       }
     }
 
+    // Regle 7 : concurrents mieux positionnes
+    for (const s of latestScores) {
+      if (s.top_competitor && s.avg_brand_rank > 2) {
+        list.push({
+          priority: 3,
+          icon: AlertTriangle,
+          color: 'text-amber-500',
+          bg: 'bg-amber-50 border-amber-200',
+          message: `Sur ${s.llm_name}, vous etes en position ${s.avg_brand_rank} en moyenne. "${s.top_competitor}" est mieux reference. Analysez son contenu et ses backlinks.`,
+        });
+      }
+    }
+
+    // Regle 8 : concurrent dominant sur un LLM specifique
+    for (const s of latestScores) {
+      let compData = {};
+      try {
+        compData = s.competitors_data ? JSON.parse(s.competitors_data) : {};
+      } catch { /* ignore */ }
+      const dominantComps = Object.entries(compData)
+        .filter(([, info]) => info.mentions >= 3)
+        .sort((a, b) => b[1].mentions - a[1].mentions);
+
+      if (dominantComps.length > 0 && s.nb_mentions === 0) {
+        const [compName, compInfo] = dominantComps[0];
+        list.push({
+          priority: 2,
+          icon: AlertTriangle,
+          color: 'text-red-500',
+          bg: 'bg-red-50 border-red-200',
+          message: `"${compName}" domine sur ${s.llm_name} (${compInfo.mentions} mentions) alors que vous etes absent. Priorite haute.`,
+        });
+      }
+    }
+
+    // Regle 9 : tendance en hausse (positif)
+    for (const s of latestScores) {
+      if (s.tendance === 'hausse') {
+        list.push({
+          priority: 7,
+          icon: TrendingUp,
+          color: 'text-green-500',
+          bg: 'bg-green-50 border-green-200',
+          message: `Score en hausse sur ${s.llm_name}. Continuez les actions en cours sur ce moteur.`,
+        });
+      }
+    }
+
     // Bonus : LLM performant
     const bestLlm = latestScores.reduce(
       (best, s) => (s.taux_mention > (best?.taux_mention || 0) ? s : best),
