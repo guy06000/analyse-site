@@ -248,6 +248,7 @@ function SeoContentOptimizer({ shopifyConfig }) {
   const [state, setState] = useState('idle');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [previewLang, setPreviewLang] = useState('fr');
 
   const generate = useCallback(async () => {
     setState('generating');
@@ -259,6 +260,7 @@ function SeoContentOptimizer({ shopifyConfig }) {
         body: JSON.stringify({
           store: shopifyConfig.store,
           accessToken: shopifyConfig.accessToken,
+          language: 'both',
         }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
@@ -306,11 +308,11 @@ function SeoContentOptimizer({ shopifyConfig }) {
       {state === 'idle' && (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Genere des meta titles, descriptions et tags optimises GEO pour vos produits Shopify via GPT-4o.
+            Genere les meta titles, descriptions et tags en FR + EN simultanement via GPT-4o, puis applique via l'API Translations Shopify.
           </p>
           <Button variant="outline" size="sm" className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-100" onClick={generate}>
             <FileText className="h-3.5 w-3.5" />
-            Analyser les produits
+            Analyser les produits (FR + EN)
           </Button>
         </div>
       )}
@@ -331,30 +333,49 @@ function SeoContentOptimizer({ shopifyConfig }) {
 
       {state === 'preview' && data && (
         <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Apercu :</span>
+            {['fr', 'en'].map((lang) => (
+              <button
+                key={lang}
+                onClick={() => setPreviewLang(lang)}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                  previewLang === lang
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50'
+                }`}
+              >
+                {lang.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <div className="rounded border overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-emerald-100/70">
                 <tr>
                   <th className="text-left p-2 font-medium">Produit</th>
-                  <th className="text-left p-2 font-medium">Meta Title</th>
-                  <th className="text-left p-2 font-medium">Meta Description</th>
+                  <th className="text-left p-2 font-medium">Meta Title ({previewLang.toUpperCase()})</th>
+                  <th className="text-left p-2 font-medium">Meta Description ({previewLang.toUpperCase()})</th>
                 </tr>
               </thead>
               <tbody>
-                {data.products.map((p) => (
-                  <tr key={p.id} className="border-t">
-                    <td className="p-2 font-medium text-emerald-800">{p.title || `#${p.id}`}</td>
-                    <td className="p-2 text-muted-foreground">{p.meta_title}</td>
-                    <td className="p-2 text-muted-foreground">{p.meta_description?.slice(0, 80)}...</td>
-                  </tr>
-                ))}
+                {data.products.map((p) => {
+                  const langData = p[previewLang] || {};
+                  return (
+                    <tr key={p.id} className="border-t">
+                      <td className="p-2 font-medium text-emerald-800">{p.title || `#${p.id}`}</td>
+                      <td className="p-2 text-muted-foreground">{langData.meta_title || '-'}</td>
+                      <td className="p-2 text-muted-foreground">{(langData.meta_description || '-').slice(0, 80)}{langData.meta_description?.length > 80 ? '...' : ''}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="flex gap-2">
             <Button size="sm" className="gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={handleApply}>
               <Check className="h-3.5 w-3.5" />
-              Appliquer sur Shopify ({data.products.length} produits)
+              Appliquer FR + EN sur Shopify ({data.products.length} produits)
             </Button>
           </div>
         </div>
@@ -363,14 +384,24 @@ function SeoContentOptimizer({ shopifyConfig }) {
       {state === 'applying' && (
         <div className="flex items-center gap-2 text-sm text-emerald-600">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Mise a jour des produits Shopify...
+          Mise a jour FR (REST) + EN (Translations API)...
         </div>
       )}
 
       {state === 'applied' && (
-        <div className="flex items-center gap-2 text-sm text-green-600">
-          <Check className="h-4 w-4" />
-          {data?.applyResult?.message || 'Produits mis a jour avec succes !'}
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <Check className="h-4 w-4" />
+            {data?.applyResult?.message || 'Produits mis a jour avec succes !'}
+          </div>
+          {data?.applyResult?.details && (
+            <p className="text-xs text-muted-foreground pl-6">
+              {data.applyResult.details.frSuccess > 0 && `${data.applyResult.details.frSuccess} FR`}
+              {data.applyResult.details.frSuccess > 0 && data.applyResult.details.enSuccess > 0 && ' + '}
+              {data.applyResult.details.enSuccess > 0 && `${data.applyResult.details.enSuccess} EN`}
+              {' via Translations API'}
+            </p>
+          )}
         </div>
       )}
     </div>

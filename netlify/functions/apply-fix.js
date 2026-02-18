@@ -864,38 +864,142 @@ async function fixSeoContent(ctx) {
     throw error;
   }
 
-  let successCount = 0;
+  let frSuccess = 0;
+  let enSuccess = 0;
   let failCount = 0;
   const errors = [];
 
   for (const product of products) {
+    // 1. Mise à jour FR (langue par défaut) via REST API
     try {
+      const fr = product.fr || {};
       const updateData = { product: {} };
-      if (product.meta_title) updateData.product.metafields_global_title_tag = product.meta_title;
-      if (product.meta_description) updateData.product.metafields_global_description_tag = product.meta_description;
-      if (product.tags) updateData.product.tags = product.tags;
+      if (fr.meta_title) updateData.product.metafields_global_title_tag = fr.meta_title;
+      if (fr.meta_description) updateData.product.metafields_global_description_tag = fr.meta_description;
+      if (fr.tags) updateData.product.tags = fr.tags;
 
-      const res = await shopifyFetch(store, token, `/admin/api/2024-01/products/${product.id}.json`, {
-        method: 'PUT',
-        body: JSON.stringify(updateData),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Produit ${product.id}: ${err}`);
+      if (Object.keys(updateData.product).length > 0) {
+        const res = await shopifyFetch(store, token, `/admin/api/2024-01/products/${product.id}.json`, {
+          method: 'PUT',
+          body: JSON.stringify(updateData),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`FR produit ${product.id}: ${err}`);
+        }
+        frSuccess++;
       }
-      successCount++;
     } catch (err) {
       failCount++;
       errors.push(err.message);
     }
+
+    // 2. Traductions EN via GraphQL Translations API
+    const en = product.en;
+    if (en) {
+      try {
+        await registerProductTranslations(store, token, product.id, 'en', en);
+        enSuccess++;
+      } catch (err) {
+        errors.push(`EN produit ${product.id}: ${err.message}`);
+      }
+    }
   }
 
   return {
-    success: successCount > 0,
+    success: frSuccess > 0 || enSuccess > 0,
     fixId: 'geo-seo-content',
-    message: `SEO produits mis à jour : ${successCount} succès, ${failCount} échecs`,
-    details: { successCount, failCount, errors: errors.slice(0, 5) },
+    message: `SEO bilingue : ${frSuccess} FR + ${enSuccess} EN mis à jour, ${failCount} échecs`,
+    details: { frSuccess, enSuccess, failCount, errors: errors.slice(0, 5) },
   };
+}
+
+// ── Shopify GraphQL Translations ──
+
+async function shopifyGraphQL(store, token, query, variables = {}) {
+  const res = await fetch(`https://${store}/admin/api/2024-01/graphql.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': token,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`GraphQL error (${res.status}): ${err}`);
+  }
+  return res.json();
+}
+
+async function registerProductTranslations(store, token, productId, locale, translations) {
+  const gid = `gid://shopify/Product/${productId}`;
+
+  // 1. Récupérer les digests des champs traduisibles
+  const digestQuery = `query ($resourceId: ID!) {
+    translatableResource(resourceId: $resourceId) {
+      translatableContent {
+        key
+        digest
+        locale
+      }
+    }
+  }`;
+
+  const digestResult = await shopifyGraphQL(store, token, digestQuery, { resourceId: gid });
+  const contents = digestResult.data?.translatableResource?.translatableContent || [];
+
+  // Map key → digest (pour la locale par défaut)
+  const digestMap = {};
+  for (const c of contents) {
+    digestMap[c.key] = c.digest;
+  }
+
+  // 2. Préparer les traductions
+  const translationInputs = [];
+  if (translations.meta_title && digestMap.meta_title) {
+    translationInputs.push({
+      key: 'meta_title',
+      value: translations.meta_title,
+      locale,
+      translatableContentDigest: digestMap.meta_title,
+    });
+  }
+  if (translations.meta_description && digestMap.meta_description) {
+    translationInputs.push({
+      key: 'meta_description',
+      value: translations.meta_description,
+      locale,
+      translatableContentDigest: digestMap.meta_description,
+    });
+  }
+
+  if (translationInputs.length === 0) return;
+
+  // 3. Enregistrer les traductions
+  const registerMutation = `mutation translationsRegister($resourceId: ID!, $translations: [TranslationInput!]!) {
+    translationsRegister(resourceId: $resourceId, translations: $translations) {
+      userErrors {
+        field
+        message
+      }
+      translations {
+        key
+        value
+        locale
+      }
+    }
+  }`;
+
+  const result = await shopifyGraphQL(store, token, registerMutation, {
+    resourceId: gid,
+    translations: translationInputs,
+  });
+
+  const userErrors = result.data?.translationsRegister?.userErrors || [];
+  if (userErrors.length > 0) {
+    throw new Error(userErrors.map((e) => e.message).join(', '));
+  }
 }
 
 async function fixBlogContent(ctx) {
