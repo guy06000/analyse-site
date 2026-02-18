@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useVisibility } from '@/hooks/useVisibility';
 import { VisibilityEvolution } from '@/components/VisibilityEvolution';
 import { CompetitorRanking } from '@/components/CompetitorRanking';
+import { CategoryScores } from '@/components/CategoryScores';
 import { PromptPerformance } from '@/components/PromptPerformance';
 import { SentimentOverview } from '@/components/SentimentOverview';
 
@@ -443,6 +444,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
                   </Button>
                 ))}
               </div>
+              <CategoryScores results={results} />
               <CompetitorRanking
                 scores={scores}
                 results={promptFilter === 'all' ? results : results?.filter(r => r.type_prompt === promptFilter)}
