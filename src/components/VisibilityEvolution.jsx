@@ -31,7 +31,7 @@ function filterByPeriod(data, periodDays, dateField = 'date') {
   return data.filter((item) => (item[dateField] || '') >= cutoffStr);
 }
 
-export function VisibilityEvolution({ scores, results, shopifyConfig }) {
+export function VisibilityEvolution({ scores, results, shopifyConfig, analysisResults }) {
   const [period, setPeriod] = useState('all');
 
   // Filtrer par periode
@@ -225,7 +225,7 @@ export function VisibilityEvolution({ scores, results, shopifyConfig }) {
 
       {/* Recommandations */}
       <div className="rounded-lg border p-4">
-        <InsightsPanel scores={filteredScores} results={filteredResults} shopifyConfig={shopifyConfig} />
+        <InsightsPanel scores={filteredScores} results={filteredResults} shopifyConfig={shopifyConfig} analysisResults={analysisResults} />
       </div>
     </div>
   );

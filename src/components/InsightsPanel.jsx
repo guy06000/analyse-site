@@ -12,13 +12,18 @@ import {
   ArrowRight,
   Code2,
   Check,
+  FileText,
+  PenLine,
+  ExternalLink,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { generateActions, buildGeoAdvisorContext } from '@/lib/insightActions';
+import { generateActions, buildGeoAdvisorContext, isFixApplied, getFixStatusSummary } from '@/lib/insightActions';
 
 const GEO_ADVISOR_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/geo-advisor';
 const JSONLD_GENERATOR_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/generate-jsonld';
+const SEO_CONTENT_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/geo-seo-content';
+const BLOG_CONTENT_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/geo-blog-content';
 
 const IMPACT_COLORS = {
   fort: 'bg-red-100 text-red-700 border-red-200',
@@ -32,25 +37,34 @@ const DIFFICULTY_COLORS = {
   difficile: 'text-red-600',
 };
 
-function ActionItem({ action }) {
+function ActionItem({ action, applied }) {
   return (
-    <div className="flex items-start gap-2 rounded border bg-white/60 p-2">
-      <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    <div className={`flex items-start gap-2 rounded border p-2 ${applied ? 'bg-green-50/60 border-green-200' : 'bg-white/60'}`}>
+      {applied ? (
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" />
+      ) : (
+        <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      )}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{action.label}</span>
-          {action.impact && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-sm font-medium ${applied ? 'text-green-800' : ''}`}>{action.label}</span>
+          {applied && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-200">
+              deja applique
+            </Badge>
+          )}
+          {!applied && action.impact && (
             <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${IMPACT_COLORS[action.impact] || ''}`}>
               {action.impact}
             </Badge>
           )}
-          {action.fixId && (
+          {!applied && action.fixId && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">
               fix auto
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{action.detail}</p>
+        <p className={`text-xs mt-0.5 ${applied ? 'text-green-700/70' : 'text-muted-foreground'}`}>{action.detail}</p>
       </div>
     </div>
   );
@@ -230,12 +244,351 @@ function JsonLdOptimizer({ shopifyConfig }) {
   );
 }
 
-function InsightCard({ insight, scores, results, shopifyConfig }) {
+function SeoContentOptimizer({ shopifyConfig }) {
+  const [state, setState] = useState('idle');
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  const generate = useCallback(async () => {
+    setState('generating');
+    setError(null);
+    try {
+      const res = await fetch(SEO_CONTENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.success || !result.products?.length) throw new Error('Aucun produit optimise retourne');
+      setData(result);
+      setState('preview');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  }, [shopifyConfig]);
+
+  const handleApply = async () => {
+    setState('applying');
+    try {
+      const res = await fetch('/.netlify/functions/apply-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fixId: 'geo-seo-content',
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+          customSnippet: JSON.stringify(data.products),
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Erreur application');
+      setData((prev) => ({ ...prev, applyResult: result }));
+      setState('applied');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <FileText className="h-4 w-4 text-emerald-600" />
+        <span className="text-sm font-semibold text-emerald-800">SEO Content Optimizer</span>
+      </div>
+
+      {state === 'idle' && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Genere des meta titles, descriptions et tags optimises GEO pour vos produits Shopify via GPT-4o.
+          </p>
+          <Button variant="outline" size="sm" className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-100" onClick={generate}>
+            <FileText className="h-3.5 w-3.5" />
+            Analyser les produits
+          </Button>
+        </div>
+      )}
+
+      {state === 'generating' && (
+        <div className="flex items-center gap-2 text-sm text-emerald-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Lecture des produits Shopify et optimisation par GPT-4o...
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="space-y-2">
+          <p className="text-sm text-red-600">Erreur : {error}</p>
+          <Button variant="outline" size="sm" onClick={generate}>Reessayer</Button>
+        </div>
+      )}
+
+      {state === 'preview' && data && (
+        <div className="space-y-3">
+          <div className="rounded border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-emerald-100/70">
+                <tr>
+                  <th className="text-left p-2 font-medium">Produit</th>
+                  <th className="text-left p-2 font-medium">Meta Title</th>
+                  <th className="text-left p-2 font-medium">Meta Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.products.map((p) => (
+                  <tr key={p.id} className="border-t">
+                    <td className="p-2 font-medium text-emerald-800">{p.title || `#${p.id}`}</td>
+                    <td className="p-2 text-muted-foreground">{p.meta_title}</td>
+                    <td className="p-2 text-muted-foreground">{p.meta_description?.slice(0, 80)}...</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={handleApply}>
+              <Check className="h-3.5 w-3.5" />
+              Appliquer sur Shopify ({data.products.length} produits)
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {state === 'applying' && (
+        <div className="flex items-center gap-2 text-sm text-emerald-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Mise a jour des produits Shopify...
+        </div>
+      )}
+
+      {state === 'applied' && (
+        <div className="flex items-center gap-2 text-sm text-green-600">
+          <Check className="h-4 w-4" />
+          {data?.applyResult?.message || 'Produits mis a jour avec succes !'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BLOG_SUGGESTIONS = [
+  'Comment poser des strass dentaires',
+  'Bijoux dentaires : guide complet 2026',
+  'Tooth gems : tendances et entretien',
+  'Formation professionnelle pose strass',
+  'Strass dentaires vs grills : comparatif',
+];
+
+function BlogContentGenerator({ shopifyConfig }) {
+  const [state, setState] = useState('idle');
+  const [topic, setTopic] = useState('');
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [showHtml, setShowHtml] = useState(false);
+
+  const generate = useCallback(async (topicText) => {
+    const t = topicText || topic;
+    if (!t.trim()) return;
+    setState('generating');
+    setError(null);
+    try {
+      const res = await fetch(BLOG_CONTENT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: t,
+          keywords: t,
+          brandName: 'ISIS n GOLD',
+          niche: 'bijoux dentaires, strass dentaires, tooth gems',
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.success || !result.html_content) throw new Error('Aucun article genere');
+      setData(result);
+      setState('preview');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  }, [topic, shopifyConfig]);
+
+  const handleApply = async () => {
+    setState('applying');
+    try {
+      const res = await fetch('/.netlify/functions/apply-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fixId: 'geo-blog-content',
+          store: shopifyConfig.store,
+          accessToken: shopifyConfig.accessToken,
+          customSnippet: JSON.stringify({
+            title: data.title,
+            html_content: data.html_content,
+            meta_description: data.meta_description,
+            tags: data.tags,
+          }),
+        }),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Erreur creation');
+      setData((prev) => ({ ...prev, applyResult: result }));
+      setState('applied');
+    } catch (err) {
+      setError(err.message);
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-pink-200 bg-pink-50/50 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <PenLine className="h-4 w-4 text-pink-600" />
+        <span className="text-sm font-semibold text-pink-800">Blog Content Generator</span>
+      </div>
+
+      {state === 'idle' && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Generez un article de blog expert (1500+ mots) optimise GEO via Claude IA.
+          </p>
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && generate()}
+            placeholder="Sujet de l'article..."
+            className="w-full rounded border border-pink-200 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-pink-300"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {BLOG_SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => { setTopic(s); generate(s); }}
+                className="rounded-full border border-pink-200 bg-white px-2.5 py-0.5 text-xs text-pink-700 hover:bg-pink-100 transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          {topic.trim() && (
+            <Button variant="outline" size="sm" className="gap-2 text-pink-700 border-pink-300 hover:bg-pink-100" onClick={() => generate()}>
+              <PenLine className="h-3.5 w-3.5" />
+              Generer l'article
+            </Button>
+          )}
+        </div>
+      )}
+
+      {state === 'generating' && (
+        <div className="flex items-center gap-2 text-sm text-pink-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Redaction de l'article par Claude IA...
+        </div>
+      )}
+
+      {state === 'error' && (
+        <div className="space-y-2">
+          <p className="text-sm text-red-600">Erreur : {error}</p>
+          <Button variant="outline" size="sm" onClick={() => setState('idle')}>Reessayer</Button>
+        </div>
+      )}
+
+      {state === 'preview' && data && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <h4 className="text-sm font-semibold text-pink-900">{data.title}</h4>
+            <p className="text-xs text-muted-foreground">{data.meta_description}</p>
+            {data.tags && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {data.tags.split(',').map((tag) => (
+                  <Badge key={tag.trim()} variant="outline" className="text-[10px] px-1.5 py-0 bg-pink-100 text-pink-700 border-pink-200">
+                    {tag.trim()}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {data.estimated_read_time && (
+              <p className="text-[10px] text-pink-600">Temps de lecture : {data.estimated_read_time}</p>
+            )}
+          </div>
+
+          <div>
+            <button
+              onClick={() => setShowHtml(!showHtml)}
+              className="flex items-center gap-1 text-xs text-pink-600 hover:text-pink-800"
+            >
+              {showHtml ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              {showHtml ? 'Masquer' : 'Voir'} l'article
+            </button>
+            {showHtml && (
+              <div
+                className="mt-2 max-h-80 overflow-auto rounded border border-pink-200 bg-white p-4 prose prose-sm prose-pink"
+                dangerouslySetInnerHTML={{ __html: data.html_content }}
+              />
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-2 bg-pink-600 hover:bg-pink-700" onClick={handleApply}>
+              <PenLine className="h-3.5 w-3.5" />
+              Creer comme brouillon Shopify
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setState('idle')}>
+              Nouveau sujet
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {state === 'applying' && (
+        <div className="flex items-center gap-2 text-sm text-pink-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Creation du brouillon dans Shopify...
+        </div>
+      )}
+
+      {state === 'applied' && data?.applyResult && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <Check className="h-4 w-4" />
+            {data.applyResult.message}
+          </div>
+          {data.applyResult.details?.adminUrl && (
+            <a
+              href={data.applyResult.details.adminUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-pink-700 hover:text-pink-900 underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Voir dans Shopify Admin
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightCard({ insight, scores, results, shopifyConfig, analysisResults }) {
   const [expanded, setExpanded] = useState(false);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [showJsonLdOptimizer, setShowJsonLdOptimizer] = useState(false);
+  const [showSeoOptimizer, setShowSeoOptimizer] = useState(false);
+  const [showBlogGenerator, setShowBlogGenerator] = useState(false);
 
   const actions = useMemo(
     () => generateActions(insight.type, insight.context),
@@ -244,6 +597,16 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
 
   const hasJsonLdAction = useMemo(
     () => actions.some((a) => a.fixId === 'seo-json-ld'),
+    [actions]
+  );
+
+  const hasSeoContentAction = useMemo(
+    () => actions.some((a) => a.fixId === 'geo-seo-content'),
+    [actions]
+  );
+
+  const hasBlogContentAction = useMemo(
+    () => actions.some((a) => a.fixId === 'geo-blog-content'),
     [actions]
   );
 
@@ -291,10 +654,20 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
 
       {expanded && (
         <div className="border-t px-3 pb-3 pt-2 space-y-2">
-          {/* Actions statiques */}
-          {actions.map((action, i) => (
-            <ActionItem key={i} action={action} />
-          ))}
+          {/* Actions statiques — fixes appliques en dernier */}
+          {[...actions]
+            .sort((a, b) => {
+              const aApplied = a.fixId ? isFixApplied(a.fixId, analysisResults) : false;
+              const bApplied = b.fixId ? isFixApplied(b.fixId, analysisResults) : false;
+              return aApplied - bApplied;
+            })
+            .map((action, i) => (
+              <ActionItem
+                key={i}
+                action={action}
+                applied={action.fixId ? isFixApplied(action.fixId, analysisResults) : false}
+              />
+            ))}
 
           {/* Boutons IA */}
           <div className="pt-1 flex flex-wrap gap-2">
@@ -308,6 +681,32 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
               >
                 <Code2 className="h-3.5 w-3.5" />
                 Optimiser JSON-LD (IA)
+              </Button>
+            )}
+
+            {/* SEO Content Optimizer button */}
+            {hasSeoContentAction && shopifyConfig?.store && shopifyConfig?.accessToken && !showSeoOptimizer && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                onClick={() => setShowSeoOptimizer(true)}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Optimiser SEO produits (IA)
+              </Button>
+            )}
+
+            {/* Blog Content Generator button */}
+            {hasBlogContentAction && shopifyConfig?.store && shopifyConfig?.accessToken && !showBlogGenerator && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-pink-700 border-pink-300 hover:bg-pink-50"
+                onClick={() => setShowBlogGenerator(true)}
+              >
+                <PenLine className="h-3.5 w-3.5" />
+                Generer article blog (IA)
               </Button>
             )}
 
@@ -344,6 +743,16 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
             <JsonLdOptimizer shopifyConfig={shopifyConfig} />
           )}
 
+          {/* SEO Content Optimizer */}
+          {showSeoOptimizer && shopifyConfig && (
+            <SeoContentOptimizer shopifyConfig={shopifyConfig} />
+          )}
+
+          {/* Blog Content Generator */}
+          {showBlogGenerator && shopifyConfig && (
+            <BlogContentGenerator shopifyConfig={shopifyConfig} />
+          )}
+
           {/* Resultat IA */}
           <AiAdviceCard advice={aiAdvice} />
         </div>
@@ -352,9 +761,14 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
   );
 }
 
-export function InsightsPanel({ scores, results, shopifyConfig }) {
+export function InsightsPanel({ scores, results, shopifyConfig, analysisResults }) {
   const [showTopOptimizer, setShowTopOptimizer] = useState(false);
   const hasShopify = !!(shopifyConfig?.store && shopifyConfig?.accessToken);
+
+  const fixSummary = useMemo(
+    () => getFixStatusSummary(analysisResults),
+    [analysisResults]
+  );
 
   const insights = useMemo(() => {
     const list = [];
@@ -612,6 +1026,24 @@ export function InsightsPanel({ scores, results, shopifyConfig }) {
           </Button>
         )}
       </div>
+      {/* Resume des fixes Shopify */}
+      {hasShopify && (fixSummary.applied.length > 0 || fixSummary.pending.length > 0) && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground mr-1">Fixes Shopify :</span>
+          {fixSummary.applied.length > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-200">
+              <Check className="mr-0.5 h-3 w-3" />
+              {fixSummary.applied.length} appliques
+            </Badge>
+          )}
+          {fixSummary.pending.length > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 border-amber-200">
+              <Wrench className="mr-0.5 h-3 w-3" />
+              {fixSummary.pending.length} a faire
+            </Badge>
+          )}
+        </div>
+      )}
       {showTopOptimizer && hasShopify && (
         <div className="mb-3">
           <JsonLdOptimizer shopifyConfig={shopifyConfig} />
@@ -625,6 +1057,7 @@ export function InsightsPanel({ scores, results, shopifyConfig }) {
             scores={scores}
             results={results}
             shopifyConfig={shopifyConfig}
+            analysisResults={analysisResults}
           />
         ))}
       </div>

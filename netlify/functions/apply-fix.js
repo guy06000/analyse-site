@@ -159,6 +159,9 @@ async function executeFix(fixId, ctx) {
     'i18n-html-lang': fixHtmlLang,
     'i18n-hreflang': fixHreflang,
     'i18n-content-language': fixContentLanguage,
+    'geo-multisite-canonical': fixMultisiteCanonical,
+    'geo-seo-content': fixSeoContent,
+    'geo-blog-content': fixBlogContent,
   };
 
   const handler = handlers[fixId];
@@ -809,4 +812,160 @@ async function fixContentLanguage(ctx) {
   await putAsset(store, token, themeId, 'layout/theme.liquid', content);
 
   return { success: true, fixId: 'i18n-content-language', message: 'Meta content-language ajoutée dans theme.liquid' };
+}
+
+// ── GEO Fix handlers ──
+
+async function fixMultisiteCanonical(ctx) {
+  const { store, token, themeId } = ctx;
+
+  const geoCanonicalSnippet = `{%- comment -%} GEO Canonical multisite — généré par Analyse Site {%- endcomment -%}
+{%- assign canonical_path = canonical_url | remove: shop.url -%}
+<link rel="canonical" href="https://isisingold.com{{ canonical_path }}">
+<link rel="alternate" hreflang="fr" href="https://isisingold.com{{ canonical_path }}">
+<link rel="alternate" hreflang="fr" href="https://goldy-isis.myshopify.com{{ canonical_path }}">
+<link rel="alternate" hreflang="fr" href="https://strass-dentaires.fr{{ canonical_path }}">
+<link rel="alternate" hreflang="x-default" href="https://isisingold.com{{ canonical_path }}">
+`;
+
+  await putAsset(store, token, themeId, 'snippets/geo-canonical.liquid', geoCanonicalSnippet);
+
+  let content = await getThemeLiquid(store, token, themeId);
+
+  // Supprimer l'ancien canonical Shopify par défaut si présent
+  content = content.replace(/\s*<link\s+rel="canonical"\s+href="\{\{[^}]*canonical_url[^}]*\}\}"[^>]*>/g, '');
+
+  if (content.includes("render 'geo-canonical'")) {
+    return { success: true, fixId: 'geo-multisite-canonical', message: 'Snippet geo-canonical déjà inclus dans theme.liquid' };
+  }
+
+  const includeTag = `  {% render 'geo-canonical' %}`;
+  content = injectBeforeHeadClose(content, includeTag);
+  await putAsset(store, token, themeId, 'layout/theme.liquid', content);
+
+  return { success: true, fixId: 'geo-multisite-canonical', message: 'Canonical multisite configuré : canonical vers isisingold.com + hreflang cross-domaine (3 sites)' };
+}
+
+async function fixSeoContent(ctx) {
+  const { store, token, customSnippet } = ctx;
+
+  if (!customSnippet) {
+    const error = new Error('customSnippet requis pour geo-seo-content (JSON des produits optimisés)');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let products;
+  try {
+    products = JSON.parse(customSnippet);
+  } catch {
+    const error = new Error('customSnippet invalide : JSON attendu');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+  const errors = [];
+
+  for (const product of products) {
+    try {
+      const updateData = { product: {} };
+      if (product.meta_title) updateData.product.metafields_global_title_tag = product.meta_title;
+      if (product.meta_description) updateData.product.metafields_global_description_tag = product.meta_description;
+      if (product.tags) updateData.product.tags = product.tags;
+
+      const res = await shopifyFetch(store, token, `/admin/api/2024-01/products/${product.id}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Produit ${product.id}: ${err}`);
+      }
+      successCount++;
+    } catch (err) {
+      failCount++;
+      errors.push(err.message);
+    }
+  }
+
+  return {
+    success: successCount > 0,
+    fixId: 'geo-seo-content',
+    message: `SEO produits mis à jour : ${successCount} succès, ${failCount} échecs`,
+    details: { successCount, failCount, errors: errors.slice(0, 5) },
+  };
+}
+
+async function fixBlogContent(ctx) {
+  const { store, token, customSnippet } = ctx;
+
+  if (!customSnippet) {
+    const error = new Error('customSnippet requis pour geo-blog-content (JSON de l\'article)');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let article;
+  try {
+    article = JSON.parse(customSnippet);
+  } catch {
+    const error = new Error('customSnippet invalide : JSON attendu');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Trouver le blog principal
+  const blogsRes = await shopifyFetch(store, token, '/admin/api/2024-01/blogs.json');
+  if (!blogsRes.ok) {
+    const err = await blogsRes.text();
+    if (blogsRes.status === 403) {
+      const error = new Error('Scope write_content manquant sur l\'app Shopify. Ajoutez ce scope dans les paramètres de l\'app.');
+      error.statusCode = 403;
+      throw error;
+    }
+    throw new Error(`Erreur lecture blogs : ${err}`);
+  }
+
+  const blogsData = await blogsRes.json();
+  const blog = blogsData.blogs?.[0];
+  if (!blog) {
+    throw new Error('Aucun blog trouvé sur le store Shopify. Créez un blog d\'abord.');
+  }
+
+  // Créer l'article en brouillon
+  const articleRes = await shopifyFetch(store, token, `/admin/api/2024-01/blogs/${blog.id}/articles.json`, {
+    method: 'POST',
+    body: JSON.stringify({
+      article: {
+        title: article.title,
+        body_html: article.html_content,
+        tags: article.tags || '',
+        summary_html: article.meta_description || '',
+        published: false,
+      },
+    }),
+  });
+
+  if (!articleRes.ok) {
+    const err = await articleRes.text();
+    if (articleRes.status === 403) {
+      const error = new Error('Scope write_content manquant sur l\'app Shopify. Ajoutez ce scope dans les paramètres de l\'app.');
+      error.statusCode = 403;
+      throw error;
+    }
+    throw new Error(`Erreur création article : ${err}`);
+  }
+
+  const articleData = await articleRes.json();
+  const createdArticle = articleData.article;
+  const adminUrl = `https://${store}/admin/articles/${createdArticle.id}`;
+
+  return {
+    success: true,
+    fixId: 'geo-blog-content',
+    message: `Article "${createdArticle.title}" créé en brouillon`,
+    details: { articleId: createdArticle.id, adminUrl, blogId: blog.id },
+  };
 }

@@ -3,6 +3,71 @@
  * Retourne 2-4 actions specifiques basees sur le contexte.
  */
 
+/**
+ * Mapping fixId → check d'analyse correspondant.
+ * Permet de detecter si un fix est deja applique en verifiant
+ * le status du check dans les resultats d'analyse SEO/AI/i18n.
+ */
+const FIX_CHECK_MAP = {
+  // SEO
+  'seo-canonical': { type: 'seo', checkName: 'URL canonique' },
+  'seo-open-graph': { type: 'seo', checkName: 'Open Graph' },
+  'seo-twitter-card': { type: 'seo', checkName: 'Twitter Card' },
+  'seo-json-ld': { type: 'seo', checkName: 'JSON-LD / Schema.org' },
+  'seo-json-ld-geo': { type: 'seo', checkName: 'JSON-LD / Schema.org' },
+  'geo-multisite-canonical': { type: 'seo', checkName: 'URL canonique' },
+  'seo-meta-keywords': { type: 'seo', checkName: 'Meta keywords' },
+  'seo-lazy-loading': { type: 'seo', checkName: 'Lazy loading des images' },
+  // AI
+  'robots-txt-ai': { type: 'ai', checkName: 'robots.txt' },
+  'llms-txt': { type: 'ai', checkName: 'llms.txt' },
+  'llms-full-txt': { type: 'ai', checkName: 'llms-full.txt' },
+  'meta-author': { type: 'ai', checkName: 'Information auteur (E-E-A-T)' },
+  'ai-date-publication': { type: 'ai', checkName: 'Date de publication' },
+  // i18n
+  'i18n-html-lang': { type: 'i18n', checkName: 'Attribut lang sur <html>' },
+  'i18n-hreflang': { type: 'i18n', checkName: 'Balises hreflang' },
+  'i18n-content-language': { type: 'i18n', checkName: 'Meta content-language' },
+};
+
+/**
+ * Verifie si un fix Shopify est deja applique en consultant les resultats d'analyse.
+ * @param {string} fixId - L'identifiant du fix
+ * @param {object} analysisResults - Les resultats d'analyse { seo: {...}, ai: {...}, i18n: {...} }
+ * @returns {boolean} true si le fix est deja en place (check correspondant en 'success')
+ */
+export function isFixApplied(fixId, analysisResults) {
+  const mapping = FIX_CHECK_MAP[fixId];
+  if (!mapping || !analysisResults) return false;
+
+  const data = analysisResults[mapping.type];
+  if (!data?.categories) return false;
+
+  for (const cat of Object.values(data.categories)) {
+    const check = cat.checks?.find((c) => c.name === mapping.checkName);
+    if (check) return check.status === 'success';
+  }
+  return false;
+}
+
+/**
+ * Retourne un resume des fixes appliques et non-appliques.
+ * @param {object} analysisResults - Les resultats d'analyse
+ * @returns {{ applied: string[], pending: string[] }}
+ */
+export function getFixStatusSummary(analysisResults) {
+  const applied = [];
+  const pending = [];
+  for (const fixId of Object.keys(FIX_CHECK_MAP)) {
+    if (isFixApplied(fixId, analysisResults)) {
+      applied.push(fixId);
+    } else {
+      pending.push(fixId);
+    }
+  }
+  return { applied, pending };
+}
+
 const LLM_TIPS = {
   'Perplexity Sonar': {
     strength: 'citations web',
@@ -113,9 +178,15 @@ export function generateActions(type, context = {}) {
         });
       }
       actions.push({
-        label: 'Deployer un fichier llms.txt',
-        detail: 'Ce fichier aide les LLMs a comprendre votre site. Activez-le via le fix Shopify automatique.',
-        fixId: 'llms-txt',
+        label: 'Canonicaliser vers le domaine principal',
+        detail: 'Forcer le canonical vers isisingold.com + hreflang cross-domaine.',
+        fixId: 'geo-multisite-canonical',
+        impact: 'fort',
+      });
+      actions.push({
+        label: 'Generer un article blog expert (Claude IA)',
+        detail: 'Creer du contenu long format optimise GEO pour capter la visibilite LLM.',
+        fixId: 'geo-blog-content',
         impact: 'fort',
       });
       actions.push({
@@ -124,14 +195,6 @@ export function generateActions(type, context = {}) {
         fixId: 'seo-json-ld',
         impact: 'moyen',
       });
-      // Actions par thematique faible
-      if (context.weakThematiques?.length > 0) {
-        const weakest = context.weakThematiques[0];
-        const themeAction = THEMATIQUE_ACTIONS[weakest]?.[0];
-        if (themeAction) {
-          actions.push({ ...themeAction, impact: 'fort' });
-        }
-      }
       break;
     }
 
@@ -145,12 +208,18 @@ export function generateActions(type, context = {}) {
           impact: 'moyen',
         });
       }
-      if (context.weakThematiques?.length > 0) {
-        for (const theme of context.weakThematiques.slice(0, 2)) {
-          const themeAction = THEMATIQUE_ACTIONS[theme]?.[0];
-          if (themeAction) actions.push(themeAction);
-        }
-      }
+      actions.push({
+        label: 'Optimiser les meta SEO produits avec IA',
+        detail: 'Generer meta titles, descriptions et tags optimises GEO pour vos produits.',
+        fixId: 'geo-seo-content',
+        impact: 'fort',
+      });
+      actions.push({
+        label: 'Generer un article blog expert (Claude IA)',
+        detail: 'Creer du contenu long format optimise GEO pour capter la visibilite LLM.',
+        fixId: 'geo-blog-content',
+        impact: 'fort',
+      });
       actions.push({
         label: 'Augmenter la frequence de publication',
         detail: 'Publiez du contenu frais 1-2x/semaine sur les sujets ou vous etes absent.',
@@ -165,6 +234,18 @@ export function generateActions(type, context = {}) {
       if (themeActions) {
         actions.push({ ...themeActions[0], impact: 'fort' });
       }
+      actions.push({
+        label: 'Optimiser les meta SEO produits avec IA',
+        detail: 'Generer meta titles, descriptions et tags optimises GEO pour vos produits.',
+        fixId: 'geo-seo-content',
+        impact: 'fort',
+      });
+      actions.push({
+        label: 'Generer un article blog expert (Claude IA)',
+        detail: `Creer un article ciblant "${context.prompt_short || 'ce sujet'}" pour capter la visibilite.`,
+        fixId: 'geo-blog-content',
+        impact: 'fort',
+      });
       if (context.competitors_cited?.length > 0) {
         const comps = context.competitors_cited.join(', ');
         actions.push({
@@ -173,11 +254,6 @@ export function generateActions(type, context = {}) {
           impact: 'fort',
         });
       }
-      actions.push({
-        label: 'Creer du contenu cible pour ce prompt',
-        detail: `Redigez un article ou une page qui repond directement a la question "${context.prompt_short || ''}"`,
-        impact: 'moyen',
-      });
       break;
     }
 
@@ -226,14 +302,21 @@ export function generateActions(type, context = {}) {
     case 'competitor_ahead': {
       const comp = context.top_competitor || 'le concurrent';
       actions.push({
+        label: 'Canonicaliser vers le domaine principal',
+        detail: 'Forcer le canonical vers isisingold.com + hreflang cross-domaine.',
+        fixId: 'geo-multisite-canonical',
+        impact: 'fort',
+      });
+      actions.push({
         label: `Analyser le contenu de "${comp}"`,
         detail: `Identifiez les pages qui performent pour "${comp}" et creez du contenu equivalent ou superieur.`,
         impact: 'fort',
       });
       actions.push({
-        label: 'Creer du contenu comparatif',
-        detail: `Un article "Notre marque vs ${comp}" bien structure peut rediriger la visibilite.`,
-        impact: 'moyen',
+        label: 'Optimiser les meta SEO produits avec IA',
+        detail: 'Generer meta titles, descriptions et tags optimises GEO pour vos produits.',
+        fixId: 'geo-seo-content',
+        impact: 'fort',
       });
       break;
     }
