@@ -864,20 +864,32 @@ async function fixSeoContent(ctx) {
     throw error;
   }
 
-  let frSuccess = 0;
-  let enSuccess = 0;
-  let frFail = 0;
-  let enFail = 0;
+  // Détecter la locale primaire du store via GraphQL
+  const localeResult = await shopifyGraphQL(store, token, `{ shopLocales { locale primary published } }`);
+  const shopLocales = localeResult.data?.shopLocales || [];
+  const primaryLocale = shopLocales.find((l) => l.primary)?.locale || 'en';
+  const secondaryLocales = shopLocales.filter((l) => !l.primary && l.published).map((l) => l.locale);
+
+  // Déterminer quelle langue va en REST (primaire) et laquelle en Translations
+  // REST API met à jour la langue par défaut du store
+  const restLang = primaryLocale.startsWith('fr') ? 'fr' : 'en';
+  const transLang = restLang === 'fr' ? 'en' : 'fr';
+  const transLocale = secondaryLocales.find((l) => l.startsWith(transLang)) || transLang;
+
+  let restSuccess = 0;
+  let transSuccess = 0;
+  let restFail = 0;
+  let transFail = 0;
   const errors = [];
 
-  // Pass 1 : FR (langue par défaut) via REST API
+  // Pass 1 : Langue primaire via REST API
   for (const product of products) {
     try {
-      const fr = product.fr || {};
+      const langData = product[restLang] || {};
       const updateData = { product: {} };
-      if (fr.meta_title) updateData.product.metafields_global_title_tag = fr.meta_title;
-      if (fr.meta_description) updateData.product.metafields_global_description_tag = fr.meta_description;
-      if (fr.tags) updateData.product.tags = fr.tags;
+      if (langData.meta_title) updateData.product.metafields_global_title_tag = langData.meta_title;
+      if (langData.meta_description) updateData.product.metafields_global_description_tag = langData.meta_description;
+      if (langData.tags) updateData.product.tags = langData.tags;
 
       if (Object.keys(updateData.product).length > 0) {
         const res = await shopifyFetch(store, token, `/admin/api/2024-01/products/${product.id}.json`, {
@@ -886,12 +898,12 @@ async function fixSeoContent(ctx) {
         });
         if (!res.ok) {
           const err = await res.text();
-          throw new Error(`FR #${product.id}: ${err}`);
+          throw new Error(`${restLang.toUpperCase()} #${product.id}: ${err}`);
         }
-        frSuccess++;
+        restSuccess++;
       }
     } catch (err) {
-      frFail++;
+      restFail++;
       errors.push(err.message);
     }
   }
@@ -899,25 +911,32 @@ async function fixSeoContent(ctx) {
   // Pause pour laisser Shopify indexer les metafields avant de requêter les digests
   await new Promise((r) => setTimeout(r, 2000));
 
-  // Pass 2 : EN via GraphQL Translations API
+  // Pass 2 : Langue secondaire via GraphQL Translations API
   for (const product of products) {
-    const en = product.en;
-    if (!en) continue;
+    const langData = product[transLang];
+    if (!langData) continue;
     try {
-      await registerProductTranslations(store, token, product.id, 'en', en);
-      enSuccess++;
+      await registerProductTranslations(store, token, product.id, transLocale, langData);
+      transSuccess++;
     } catch (err) {
-      enFail++;
-      errors.push(`EN #${product.id}: ${err.message}`);
+      transFail++;
+      errors.push(`${transLang.toUpperCase()} #${product.id}: ${err.message}`);
     }
   }
 
-  const totalFail = frFail + enFail;
+  const totalFail = restFail + transFail;
   return {
-    success: frSuccess > 0 || enSuccess > 0,
+    success: restSuccess > 0 || transSuccess > 0,
     fixId: 'geo-seo-content',
-    message: `SEO bilingue : ${frSuccess} FR (REST) + ${enSuccess} EN (Translations) mis à jour${totalFail > 0 ? `, ${totalFail} échecs` : ''}`,
-    details: { frSuccess, enSuccess, failCount: totalFail, errors: errors.slice(0, 10) },
+    message: `SEO bilingue : ${restSuccess} ${restLang.toUpperCase()} (REST) + ${transSuccess} ${transLang.toUpperCase()} (Translations) mis à jour${totalFail > 0 ? `, ${totalFail} échecs` : ''}`,
+    details: {
+      primaryLocale,
+      restLang, transLang: transLocale,
+      frSuccess: restLang === 'fr' ? restSuccess : transSuccess,
+      enSuccess: restLang === 'en' ? restSuccess : transSuccess,
+      failCount: totalFail,
+      errors: errors.slice(0, 10),
+    },
   };
 }
 

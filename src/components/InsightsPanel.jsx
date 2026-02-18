@@ -397,9 +397,9 @@ function SeoContentOptimizer({ shopifyConfig }) {
           {data?.applyResult?.details && (
             <div className="pl-6 space-y-0.5">
               <p className="text-xs text-muted-foreground">
-                {data.applyResult.details.frSuccess > 0 && `${data.applyResult.details.frSuccess} FR (REST API)`}
-                {data.applyResult.details.frSuccess > 0 && data.applyResult.details.enSuccess > 0 && ' + '}
-                {data.applyResult.details.enSuccess > 0 && `${data.applyResult.details.enSuccess} EN (Translations API)`}
+                Locale primaire : {data.applyResult.details.primaryLocale || '?'}
+                {data.applyResult.details.frSuccess > 0 && ` · ${data.applyResult.details.frSuccess} FR`}
+                {data.applyResult.details.enSuccess > 0 && ` · ${data.applyResult.details.enSuccess} EN`}
               </p>
               {data.applyResult.details.errors?.length > 0 && (
                 <p className="text-xs text-red-500">
