@@ -135,11 +135,12 @@ export function CompetitorRanking({ scores, results }) {
         seenInThisResult.add(name);
 
         if (!competitors[name]) {
-          competitors[name] = { domain, llms: {}, totalMentions: 0, totalCitations: 0 };
+          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0, totalCitations: 0 };
           for (const l of llmNames) {
             competitors[name].llms[l] = { mentions: 0, prompts: 0 };
           }
         }
+        competitors[name].domains.add(domain);
         competitors[name].llms[llm].mentions++;
         competitors[name].totalMentions++;
         competitors[name].totalCitations++;
@@ -168,7 +169,7 @@ export function CompetitorRanking({ scores, results }) {
       try { compData = s.competitors_data ? JSON.parse(s.competitors_data) : {}; } catch { /* */ }
       for (const [name, info] of Object.entries(compData)) {
         if (!competitors[name]) {
-          competitors[name] = { domain: '', llms: {}, totalMentions: 0, totalCitations: 0 };
+          competitors[name] = { domains: new Set(), llms: {}, totalMentions: 0, totalCitations: 0 };
           for (const l of llmNames) {
             competitors[name].llms[l] = { mentions: 0, prompts: ourData[l]?.totalPrompts || 0 };
           }
@@ -214,7 +215,7 @@ export function CompetitorRanking({ scores, results }) {
     const sorted = Object.entries(competitors)
       .map(([name, info]) => ({
         name,
-        domain: info.domain,
+        domains: [...(info.domains || [])],
         totalMentions: info.totalMentions,
         llms: info.llms,
         score: calcScore(info.llms),
@@ -285,7 +286,10 @@ export function CompetitorRanking({ scores, results }) {
                   <Eye className="h-3.5 w-3.5 text-primary" />
                   <span className="font-bold">ISIS n GOLD</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground">notre marque</span>
+                <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                  <p>isisngold.com</p>
+                  <p>ma-formation-strass.com</p>
+                </div>
               </td>
               <td className="border p-2">
                 <ScoreBar score={data.ourGlobalRate} />
@@ -321,8 +325,13 @@ export function CompetitorRanking({ scores, results }) {
                       <RankBadge rank={i + 1} />
                       <span className="font-medium capitalize">{comp.name}</span>
                     </div>
+                    {comp.domains.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 ml-5">
+                        {comp.domains.map(d => <p key={d}>{d}</p>)}
+                      </div>
+                    )}
                     {isAboveUs && (
-                      <span className="text-[10px] text-red-500 font-medium">devant nous</span>
+                      <span className="text-[10px] text-red-500 font-medium ml-5">devant nous</span>
                     )}
                   </td>
                   <td className="border p-2">
