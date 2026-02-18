@@ -353,6 +353,9 @@ function InsightCard({ insight, scores, results, shopifyConfig }) {
 }
 
 export function InsightsPanel({ scores, results, shopifyConfig }) {
+  const [showTopOptimizer, setShowTopOptimizer] = useState(false);
+  const hasShopify = !!(shopifyConfig?.store && shopifyConfig?.accessToken);
+
   const insights = useMemo(() => {
     const list = [];
     if (!scores?.length) return list;
@@ -595,7 +598,25 @@ export function InsightsPanel({ scores, results, shopifyConfig }) {
 
   return (
     <div>
-      <h3 className="mb-3 text-sm font-semibold">Recommandations</h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Recommandations</h3>
+        {hasShopify && !showTopOptimizer && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 text-indigo-700 border-indigo-300 hover:bg-indigo-50"
+            onClick={() => setShowTopOptimizer(true)}
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            Optimiser JSON-LD (IA)
+          </Button>
+        )}
+      </div>
+      {showTopOptimizer && hasShopify && (
+        <div className="mb-3">
+          <JsonLdOptimizer shopifyConfig={shopifyConfig} />
+        </div>
+      )}
       <div className="space-y-2">
         {insights.map((insight, i) => (
           <InsightCard
