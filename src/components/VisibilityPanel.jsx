@@ -13,7 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useVisibility } from '@/hooks/useVisibility';
+import { VisibilityEvolution } from '@/components/VisibilityEvolution';
 
 const LLM_COLORS = {
   Perplexity: 'bg-blue-100 text-blue-800 border-blue-200',
@@ -159,8 +161,10 @@ export function VisibilityPanel({ config, onConfigChange }) {
     scanning,
     error,
     scanResult,
+    pollStatus,
     loadData,
     triggerScan,
+    stopPolling,
   } = useVisibility();
   const [showConfig, setShowConfig] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -174,12 +178,10 @@ export function VisibilityPanel({ config, onConfigChange }) {
     }
   }, [config?.airtableToken, loadData]);
 
-  // Reload after scan completes
+  // Cleanup polling on unmount
   useEffect(() => {
-    if (scanResult?.success && config?.airtableToken) {
-      loadData(config.airtableToken);
-    }
-  }, [scanResult, config?.airtableToken, loadData]);
+    return () => stopPolling();
+  }, [stopPolling]);
 
   // Get latest scores (most recent date)
   const latestDate = scores?.length > 0 ? scores[0].date : null;
@@ -269,7 +271,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
           {/* Scan buttons + global score */}
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              onClick={() => triggerScan(config.n8nWebhookUrl, 5)}
+              onClick={() => triggerScan(config.n8nWebhookUrl, config.airtableToken, 5)}
               disabled={scanning}
               className="gap-2"
             >
@@ -285,7 +287,7 @@ export function VisibilityPanel({ config, onConfigChange }) {
             </Button>
             <Button
               variant="outline"
-              onClick={() => triggerScan(config.n8nWebhookUrl)}
+              onClick={() => triggerScan(config.n8nWebhookUrl, config.airtableToken)}
               disabled={scanning}
               className="gap-2"
             >
@@ -312,14 +314,22 @@ export function VisibilityPanel({ config, onConfigChange }) {
             )}
           </div>
 
+          {/* Scan status */}
+          {pollStatus === 'waiting' && (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Scan en cours... Les resultats seront detectes automatiquement (polling toutes les 10s).
+            </div>
+          )}
+
           {/* Scan result message */}
-          {scanResult && (
+          {scanResult && !scanResult.launched && (
             <div
               className={`rounded-lg border p-3 text-sm ${scanResult.success ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-600'}`}
             >
               {scanResult.success
                 ? `Scan termine : ${scanResult.nb_mentions} mentions sur ${scanResult.nb_results} requetes (score global : ${scanResult.score_global}/100)`
-                : `Erreur : ${scanResult.error}`}
+                : scanResult.message || `Erreur : ${scanResult.error}`}
             </div>
           )}
 
@@ -338,48 +348,62 @@ export function VisibilityPanel({ config, onConfigChange }) {
             </div>
           )}
 
-          {/* LLM Score Cards */}
-          {latestScores.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {latestScores.map((s, i) => (
-                <LlmScoreCard key={i} data={s} />
-              ))}
-            </div>
-          )}
+          {/* Sub-tabs : Dernier scan / Evolution */}
+          <Tabs defaultValue="latest" className="mt-2">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="latest">Dernier scan</TabsTrigger>
+              <TabsTrigger value="evolution">Evolution</TabsTrigger>
+            </TabsList>
 
-          {/* Results list */}
-          {latestResults.length > 0 && (
-            <div>
-              <button
-                onClick={() => setShowResults(!showResults)}
-                className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {showResults ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-                {showResults ? 'Masquer' : 'Voir'} les {latestResults.length}{' '}
-                resultats detailles
-              </button>
-              {showResults && (
-                <div className="mt-2 max-h-[600px] overflow-y-auto space-y-1.5">
-                  {latestResults.map((r, i) => (
-                    <ResultRow key={i} result={r} />
+            <TabsContent value="latest" className="mt-4 space-y-4">
+              {/* LLM Score Cards */}
+              {latestScores.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {latestScores.map((s, i) => (
+                    <LlmScoreCard key={i} data={s} />
                   ))}
                 </div>
               )}
-            </div>
-          )}
 
-          {!loading && !scores && (
-            <div className="py-8 text-center text-muted-foreground">
-              <p>
-                Aucun scan effectue. Lancez votre premier scan pour voir les
-                resultats.
-              </p>
-            </div>
-          )}
+              {/* Results list */}
+              {latestResults.length > 0 && (
+                <div>
+                  <button
+                    onClick={() => setShowResults(!showResults)}
+                    className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showResults ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                    {showResults ? 'Masquer' : 'Voir'} les {latestResults.length}{' '}
+                    resultats detailles
+                  </button>
+                  {showResults && (
+                    <div className="mt-2 max-h-[600px] overflow-y-auto space-y-1.5">
+                      {latestResults.map((r, i) => (
+                        <ResultRow key={i} result={r} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!loading && !scores && (
+                <div className="py-8 text-center text-muted-foreground">
+                  <p>
+                    Aucun scan effectue. Lancez votre premier scan pour voir les
+                    resultats.
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="evolution" className="mt-4">
+              <VisibilityEvolution scores={scores} results={results} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>

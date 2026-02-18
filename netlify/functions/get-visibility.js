@@ -21,7 +21,7 @@ exports.handler = async (event) => {
   try {
     if (action === 'scores') {
       const res = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=30`,
+        `https://api.airtable.com/v0/${BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=200`,
         { headers }
       );
       const data = await res.json();
@@ -48,7 +48,7 @@ exports.handler = async (event) => {
     // Default: return both
     const [scoresRes, resultsRes] = await Promise.all([
       fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=30`,
+        `https://api.airtable.com/v0/${BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=200`,
         { headers }
       ),
       fetch(

@@ -9,32 +9,20 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'URL webhook n8n requise' }) };
   }
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 590000); // 9m50s (Netlify max ~10min)
+  // Fire-and-forget : on envoie la requête sans attendre la réponse
+  // Le scan n8n prend ~72s, on ne peut pas attendre (timeout Netlify ~10s)
+  fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxPrompts: maxPrompts || 0 }),
+  }).catch(() => {});
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxPrompts: maxPrompts || 0 }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    const data = await response.json();
-
-    return {
-      statusCode: response.ok ? 200 : 502,
-      body: JSON.stringify(data),
-    };
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      return {
-        statusCode: 504,
-        body: JSON.stringify({ error: 'Timeout: le scan prend trop de temps. Vérifiez les résultats dans Airtable.' }),
-      };
-    }
-    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
-  }
+  return {
+    statusCode: 202,
+    body: JSON.stringify({
+      launched: true,
+      message: 'Scan lancé. Les résultats apparaîtront dans quelques minutes.',
+      timestamp: new Date().toISOString(),
+    }),
+  };
 };
