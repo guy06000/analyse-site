@@ -395,12 +395,18 @@ function SeoContentOptimizer({ shopifyConfig }) {
             {data?.applyResult?.message || 'Produits mis a jour avec succes !'}
           </div>
           {data?.applyResult?.details && (
-            <p className="text-xs text-muted-foreground pl-6">
-              {data.applyResult.details.frSuccess > 0 && `${data.applyResult.details.frSuccess} FR`}
-              {data.applyResult.details.frSuccess > 0 && data.applyResult.details.enSuccess > 0 && ' + '}
-              {data.applyResult.details.enSuccess > 0 && `${data.applyResult.details.enSuccess} EN`}
-              {' via Translations API'}
-            </p>
+            <div className="pl-6 space-y-0.5">
+              <p className="text-xs text-muted-foreground">
+                {data.applyResult.details.frSuccess > 0 && `${data.applyResult.details.frSuccess} FR (REST API)`}
+                {data.applyResult.details.frSuccess > 0 && data.applyResult.details.enSuccess > 0 && ' + '}
+                {data.applyResult.details.enSuccess > 0 && `${data.applyResult.details.enSuccess} EN (Translations API)`}
+              </p>
+              {data.applyResult.details.errors?.length > 0 && (
+                <p className="text-xs text-red-500">
+                  Erreurs : {data.applyResult.details.errors.slice(0, 3).join(' | ')}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -866,11 +866,12 @@ async function fixSeoContent(ctx) {
 
   let frSuccess = 0;
   let enSuccess = 0;
-  let failCount = 0;
+  let frFail = 0;
+  let enFail = 0;
   const errors = [];
 
+  // Pass 1 : FR (langue par défaut) via REST API
   for (const product of products) {
-    // 1. Mise à jour FR (langue par défaut) via REST API
     try {
       const fr = product.fr || {};
       const updateData = { product: {} };
@@ -885,32 +886,38 @@ async function fixSeoContent(ctx) {
         });
         if (!res.ok) {
           const err = await res.text();
-          throw new Error(`FR produit ${product.id}: ${err}`);
+          throw new Error(`FR #${product.id}: ${err}`);
         }
         frSuccess++;
       }
     } catch (err) {
-      failCount++;
+      frFail++;
       errors.push(err.message);
-    }
-
-    // 2. Traductions EN via GraphQL Translations API
-    const en = product.en;
-    if (en) {
-      try {
-        await registerProductTranslations(store, token, product.id, 'en', en);
-        enSuccess++;
-      } catch (err) {
-        errors.push(`EN produit ${product.id}: ${err.message}`);
-      }
     }
   }
 
+  // Pause pour laisser Shopify indexer les metafields avant de requêter les digests
+  await new Promise((r) => setTimeout(r, 2000));
+
+  // Pass 2 : EN via GraphQL Translations API
+  for (const product of products) {
+    const en = product.en;
+    if (!en) continue;
+    try {
+      await registerProductTranslations(store, token, product.id, 'en', en);
+      enSuccess++;
+    } catch (err) {
+      enFail++;
+      errors.push(`EN #${product.id}: ${err.message}`);
+    }
+  }
+
+  const totalFail = frFail + enFail;
   return {
     success: frSuccess > 0 || enSuccess > 0,
     fixId: 'geo-seo-content',
-    message: `SEO bilingue : ${frSuccess} FR + ${enSuccess} EN mis à jour, ${failCount} échecs`,
-    details: { frSuccess, enSuccess, failCount, errors: errors.slice(0, 5) },
+    message: `SEO bilingue : ${frSuccess} FR (REST) + ${enSuccess} EN (Translations) mis à jour${totalFail > 0 ? `, ${totalFail} échecs` : ''}`,
+    details: { frSuccess, enSuccess, failCount: totalFail, errors: errors.slice(0, 10) },
   };
 }
 
@@ -949,6 +956,10 @@ async function registerProductTranslations(store, token, productId, locale, tran
   const digestResult = await shopifyGraphQL(store, token, digestQuery, { resourceId: gid });
   const contents = digestResult.data?.translatableResource?.translatableContent || [];
 
+  if (contents.length === 0) {
+    throw new Error('Aucun contenu traduisible trouvé pour ce produit');
+  }
+
   // Map key → digest (pour la locale par défaut)
   const digestMap = {};
   for (const c of contents) {
@@ -974,7 +985,10 @@ async function registerProductTranslations(store, token, productId, locale, tran
     });
   }
 
-  if (translationInputs.length === 0) return;
+  if (translationInputs.length === 0) {
+    const availableKeys = Object.keys(digestMap).join(', ');
+    throw new Error(`Clés meta_title/meta_description absentes des digests. Clés dispo: [${availableKeys}]`);
+  }
 
   // 3. Enregistrer les traductions
   const registerMutation = `mutation translationsRegister($resourceId: ID!, $translations: [TranslationInput!]!) {
