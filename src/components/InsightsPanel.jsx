@@ -1,5 +1,196 @@
-import { useMemo } from 'react';
-import { AlertTriangle, TrendingDown, TrendingUp, Lightbulb } from 'lucide-react';
+import { useMemo, useState, useCallback } from 'react';
+import {
+  AlertTriangle,
+  TrendingDown,
+  TrendingUp,
+  Lightbulb,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Loader2,
+  Wrench,
+  ArrowRight,
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { generateActions, buildGeoAdvisorContext } from '@/lib/insightActions';
+
+const GEO_ADVISOR_URL = 'https://n8n.srv756714.hstgr.cloud/webhook/geo-advisor';
+
+const IMPACT_COLORS = {
+  fort: 'bg-red-100 text-red-700 border-red-200',
+  moyen: 'bg-amber-100 text-amber-700 border-amber-200',
+  faible: 'bg-green-100 text-green-700 border-green-200',
+};
+
+const DIFFICULTY_COLORS = {
+  facile: 'text-green-600',
+  moyen: 'text-amber-600',
+  difficile: 'text-red-600',
+};
+
+function ActionItem({ action }) {
+  return (
+    <div className="flex items-start gap-2 rounded border bg-white/60 p-2">
+      <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{action.label}</span>
+          {action.impact && (
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${IMPACT_COLORS[action.impact] || ''}`}>
+              {action.impact}
+            </Badge>
+          )}
+          {action.fixId && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">
+              fix auto
+            </Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{action.detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function AiAdviceCard({ advice }) {
+  if (!advice) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-purple-600" />
+        <span className="text-sm font-semibold text-purple-800">Analyse IA GEO</span>
+      </div>
+      {advice.analysis && (
+        <p className="text-sm text-purple-900/80">{advice.analysis}</p>
+      )}
+      {advice.actions?.length > 0 && (
+        <div className="space-y-2">
+          {advice.actions.map((a, i) => (
+            <div key={i} className="rounded border border-purple-200 bg-white/70 p-2">
+              <div className="flex items-center gap-2">
+                <ArrowRight className="h-3 w-3 shrink-0 text-purple-500" />
+                <span className="text-sm font-medium">{a.title}</span>
+                {a.impact && (
+                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${IMPACT_COLORS[a.impact] || ''}`}>
+                    {a.impact}
+                  </Badge>
+                )}
+                {a.difficulty && (
+                  <span className={`text-[10px] ${DIFFICULTY_COLORS[a.difficulty] || ''}`}>
+                    {a.difficulty}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{a.description}</p>
+              {a.timeline && (
+                <p className="text-[10px] text-purple-600 mt-1">Delai : {a.timeline}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightCard({ insight, scores, results }) {
+  const [expanded, setExpanded] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+
+  const actions = useMemo(
+    () => generateActions(insight.type, insight.context),
+    [insight.type, insight.context]
+  );
+
+  const handleAiAdvice = useCallback(async () => {
+    if (aiAdvice) return; // Deja charge
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const payload = buildGeoAdvisorContext(insight, scores, results);
+      const res = await fetch(GEO_ADVISOR_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const data = await res.json();
+      setAiAdvice(data);
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [insight, scores, results, aiAdvice]);
+
+  const hasContent = actions.length > 0;
+
+  return (
+    <div className={`rounded-lg border ${insight.bg}`}>
+      <button
+        onClick={() => hasContent && setExpanded(!expanded)}
+        className={`flex w-full items-start gap-3 p-3 text-left ${hasContent ? 'cursor-pointer' : ''}`}
+      >
+        <insight.icon className={`mt-0.5 h-4 w-4 shrink-0 ${insight.color}`} />
+        <p className="flex-1 text-sm">{insight.message}</p>
+        {hasContent && (
+          <span className="shrink-0 mt-0.5">
+            {expanded ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="border-t px-3 pb-3 pt-2 space-y-2">
+          {/* Actions statiques */}
+          {actions.map((action, i) => (
+            <ActionItem key={i} action={action} />
+          ))}
+
+          {/* Bouton Conseil IA */}
+          <div className="pt-1">
+            {!aiAdvice && !aiLoading && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-purple-700 border-purple-300 hover:bg-purple-50"
+                onClick={handleAiAdvice}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Conseil IA GEO
+              </Button>
+            )}
+            {aiLoading && (
+              <div className="flex items-center gap-2 text-sm text-purple-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Analyse en cours...
+              </div>
+            )}
+            {aiError && (
+              <div className="text-xs text-red-500">
+                Erreur : {aiError}
+                <button onClick={() => { setAiError(null); handleAiAdvice(); }} className="ml-2 underline">
+                  Reessayer
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Resultat IA */}
+          <AiAdviceCard advice={aiAdvice} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function InsightsPanel({ scores, results }) {
   const insights = useMemo(() => {
@@ -14,10 +205,31 @@ export function InsightsPanel({ scores, results }) {
     const latestResultDate = results?.[0]?.date_scan;
     const latestResults = results?.filter((r) => r.date_scan === latestResultDate) || [];
 
+    // Helper : trouver les thematiques faibles pour un LLM
+    const getWeakThematiques = (llmName) => {
+      const llmResults = latestResults.filter((r) => r.llm_name === llmName);
+      const themes = {};
+      for (const r of llmResults) {
+        const t = r.thematique || 'autre';
+        if (!themes[t]) themes[t] = { total: 0, mentions: 0 };
+        themes[t].total++;
+        if (r.mention_detected === 'oui') themes[t].mentions++;
+      }
+      return Object.entries(themes)
+        .filter(([, v]) => v.total > 0 && v.mentions / v.total < 0.3)
+        .sort((a, b) => (a[1].mentions / a[1].total) - (b[1].mentions / b[1].total))
+        .map(([k]) => k);
+    };
+
     // Regle 1 : LLM avec score 0
     for (const s of latestScores) {
       if (s.score_moyen === 0 || (s.nb_mentions === 0 && s.taux_mention === 0)) {
         list.push({
+          type: 'zero_visibility',
+          context: {
+            llm_name: s.llm_name,
+            weakThematiques: getWeakThematiques(s.llm_name),
+          },
           priority: 1,
           icon: AlertTriangle,
           color: 'text-amber-500',
@@ -31,6 +243,8 @@ export function InsightsPanel({ scores, results }) {
     for (const s of latestScores) {
       if (s.tendance === 'baisse') {
         list.push({
+          type: 'declining',
+          context: { llm_name: s.llm_name },
           priority: 2,
           icon: TrendingDown,
           color: 'text-red-500',
@@ -44,6 +258,12 @@ export function InsightsPanel({ scores, results }) {
     for (const s of latestScores) {
       if (s.taux_mention > 0 && s.taux_mention < 20) {
         list.push({
+          type: 'low_mention',
+          context: {
+            llm_name: s.llm_name,
+            taux: s.taux_mention,
+            weakThematiques: getWeakThematiques(s.llm_name),
+          },
           priority: 3,
           icon: AlertTriangle,
           color: 'text-amber-500',
@@ -59,6 +279,8 @@ export function InsightsPanel({ scores, results }) {
       const hasDomain = latestResults.some((r) => r.mention_type === 'domain');
       if (hasBrand && !hasDomain) {
         list.push({
+          type: 'brand_no_url',
+          context: {},
           priority: 4,
           icon: Lightbulb,
           color: 'text-blue-500',
@@ -70,20 +292,33 @@ export function InsightsPanel({ scores, results }) {
 
     // Regle 5 : prompt jamais cite
     if (latestResults.length > 0) {
-      const promptMentions = {};
+      const promptData = {};
       for (const r of latestResults) {
         if (!r.prompt_question) continue;
-        if (!promptMentions[r.prompt_question]) {
-          promptMentions[r.prompt_question] = false;
+        if (!promptData[r.prompt_question]) {
+          promptData[r.prompt_question] = { mentioned: false, thematique: r.thematique, competitors: [] };
         }
         if (r.mention_detected === 'oui') {
-          promptMentions[r.prompt_question] = true;
+          promptData[r.prompt_question].mentioned = true;
+        }
+        const comps = parseCompetitors(r.competitors_mentioned);
+        for (const c of comps) {
+          if (!promptData[r.prompt_question].competitors.includes(c)) {
+            promptData[r.prompt_question].competitors.push(c);
+          }
         }
       }
-      for (const [prompt, mentioned] of Object.entries(promptMentions)) {
-        if (!mentioned) {
+      for (const [prompt, data] of Object.entries(promptData)) {
+        if (!data.mentioned) {
           const short = prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt;
           list.push({
+            type: 'dead_prompt',
+            context: {
+              prompt_short: short,
+              prompt_full: prompt,
+              thematique: data.thematique,
+              competitors_cited: data.competitors.slice(0, 5),
+            },
             priority: 5,
             icon: Lightbulb,
             color: 'text-blue-500',
@@ -101,6 +336,8 @@ export function InsightsPanel({ scores, results }) {
       );
       if (!hasCitation) {
         list.push({
+          type: 'no_citations',
+          context: {},
           priority: 4,
           icon: Lightbulb,
           color: 'text-blue-500',
@@ -114,6 +351,12 @@ export function InsightsPanel({ scores, results }) {
     for (const s of latestScores) {
       if (s.top_competitor && s.avg_brand_rank > 2) {
         list.push({
+          type: 'competitor_ahead',
+          context: {
+            llm_name: s.llm_name,
+            top_competitor: s.top_competitor,
+            avg_brand_rank: s.avg_brand_rank,
+          },
           priority: 3,
           icon: AlertTriangle,
           color: 'text-amber-500',
@@ -136,6 +379,12 @@ export function InsightsPanel({ scores, results }) {
       if (dominantComps.length > 0 && s.nb_mentions === 0) {
         const [compName, compInfo] = dominantComps[0];
         list.push({
+          type: 'competitor_dominant',
+          context: {
+            llm_name: s.llm_name,
+            dominant_competitor: compName,
+            competitor_mentions: compInfo.mentions,
+          },
           priority: 2,
           icon: AlertTriangle,
           color: 'text-red-500',
@@ -149,6 +398,8 @@ export function InsightsPanel({ scores, results }) {
     for (const s of latestScores) {
       if (s.tendance === 'hausse') {
         list.push({
+          type: 'rising',
+          context: { llm_name: s.llm_name },
           priority: 7,
           icon: TrendingUp,
           color: 'text-green-500',
@@ -165,6 +416,8 @@ export function InsightsPanel({ scores, results }) {
     );
     if (bestLlm && bestLlm.taux_mention >= 50) {
       list.push({
+        type: 'rising',
+        context: { llm_name: bestLlm.llm_name },
         priority: 6,
         icon: TrendingUp,
         color: 'text-green-500',
@@ -185,15 +438,21 @@ export function InsightsPanel({ scores, results }) {
       <h3 className="mb-3 text-sm font-semibold">Recommandations</h3>
       <div className="space-y-2">
         {insights.map((insight, i) => (
-          <div
+          <InsightCard
             key={i}
-            className={`flex items-start gap-3 rounded-lg border p-3 ${insight.bg}`}
-          >
-            <insight.icon className={`mt-0.5 h-4 w-4 shrink-0 ${insight.color}`} />
-            <p className="text-sm">{insight.message}</p>
-          </div>
+            insight={insight}
+            scores={scores}
+            results={results}
+          />
         ))}
       </div>
     </div>
   );
+}
+
+function parseCompetitors(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw); } catch { /* ignore */ }
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
