@@ -1,6 +1,7 @@
 const BASE_ID = 'appwXFqjbbTDEbCVW';
 const SCORES_TABLE = 'tblMYErlB8UKy1Bvt';
 const RESULTATS_TABLE = 'tbl3a2NNMbqUOKlUp';
+const MODIFICATIONS_TABLE = 'tblwyvDq2yOhs4PDO';
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -45,8 +46,21 @@ exports.handler = async (event) => {
       };
     }
 
-    // Default: return both
-    const [scoresRes, resultsRes] = await Promise.all([
+    if (action === 'modifications') {
+      const res = await fetch(
+        `https://api.airtable.com/v0/${BASE_ID}/${MODIFICATIONS_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=100`,
+        { headers }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Erreur Airtable');
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ modifications: data.records.map((r) => r.fields) }),
+      };
+    }
+
+    // Default: return all three
+    const [scoresRes, resultsRes, modsRes] = await Promise.all([
       fetch(
         `https://api.airtable.com/v0/${BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=200`,
         { headers }
@@ -55,16 +69,22 @@ exports.handler = async (event) => {
         `https://api.airtable.com/v0/${BASE_ID}/${RESULTATS_TABLE}?sort%5B0%5D%5Bfield%5D=date_scan&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=500`,
         { headers }
       ),
+      fetch(
+        `https://api.airtable.com/v0/${BASE_ID}/${MODIFICATIONS_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=100`,
+        { headers }
+      ),
     ]);
 
     const scores = await scoresRes.json();
     const results = await resultsRes.json();
+    const mods = await modsRes.json();
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         scores: scores.records?.map((r) => r.fields) || [],
         results: results.records?.map((r) => r.fields) || [],
+        modifications: mods.records?.map((r) => r.fields) || [],
       }),
     };
   } catch (error) {

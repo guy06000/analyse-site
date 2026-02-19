@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
 
@@ -37,10 +38,11 @@ function formatDate(dateStr) {
   return dateStr;
 }
 
-function CustomTooltip({ active, payload, label }) {
+function CustomTooltip({ active, payload, label, modifications }) {
   if (!active || !payload?.length) return null;
+  const mods = (modifications || []).filter((m) => m.date === label);
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-md">
+    <div className="rounded-lg border bg-background p-3 shadow-md max-w-xs">
       <p className="mb-1 text-sm font-medium">{label}</p>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center gap-2 text-sm">
@@ -52,11 +54,30 @@ function CustomTooltip({ active, payload, label }) {
           <span className="ml-auto font-medium">{entry.value}/100</span>
         </div>
       ))}
+      {mods.length > 0 && (
+        <div className="mt-2 border-t pt-2">
+          {mods.map((m, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} />
+              <span className="font-medium" style={{ color: m.color }}>{m.category}</span>
+              <span className="text-muted-foreground truncate">{m.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-export function EvolutionChart({ scores }) {
+const CATEGORY_COLORS = {
+  SEO: '#3B82F6',
+  AI: '#F97316',
+  GEO: '#8B5CF6',
+  i18n: '#10B981',
+  Blog: '#EC4899',
+};
+
+export function EvolutionChart({ scores, modifications }) {
   const { chartData, llmNames, singlePoint } = useMemo(() => {
     if (!scores?.length) return { chartData: [], llmNames: [], singlePoint: false };
 
@@ -91,6 +112,24 @@ export function EvolutionChart({ scores }) {
     };
   }, [scores]);
 
+  // Préparer les marqueurs de modifications (convertir dates au format dd/MM du chart)
+  const modMarkers = useMemo(() => {
+    if (!modifications?.length || !chartData.length) return [];
+    // Dates affichées dans le chart
+    const chartDates = new Set(chartData.map((d) => d.date));
+    return modifications.map((m) => {
+      const formatted = formatDate(m.date);
+      return {
+        date: formatted,
+        fixId: m.fix_id,
+        category: m.category,
+        description: m.description,
+        color: CATEGORY_COLORS[m.category] || '#6B7280',
+        isOnChart: chartDates.has(formatted),
+      };
+    });
+  }, [modifications, chartData]);
+
   if (!chartData.length) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
@@ -107,8 +146,25 @@ export function EvolutionChart({ scores }) {
           <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} />
           <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip modifications={modMarkers} />} />
           <Legend />
+          {modMarkers.map((m, i) => (
+            <ReferenceLine
+              key={`mod-${i}`}
+              x={m.date}
+              stroke={m.color}
+              strokeDasharray="4 4"
+              strokeWidth={2}
+              label={{
+                value: m.fixId,
+                position: 'top',
+                fontSize: 10,
+                fill: m.color,
+                angle: -45,
+                offset: 10,
+              }}
+            />
+          ))}
           {llmNames.map((name) => (
             <Line
               key={name}

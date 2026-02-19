@@ -31,7 +31,7 @@ function filterByPeriod(data, periodDays, dateField = 'date') {
   return data.filter((item) => (item[dateField] || '') >= cutoffStr);
 }
 
-export function VisibilityEvolution({ scores, results, shopifyConfig, analysisResults }) {
+export function VisibilityEvolution({ scores, results, modifications, shopifyConfig, analysisResults }) {
   const [period, setPeriod] = useState('all');
 
   // Filtrer par periode
@@ -42,6 +42,10 @@ export function VisibilityEvolution({ scores, results, shopifyConfig, analysisRe
   const filteredResults = useMemo(
     () => filterByPeriod(results, period, 'date_scan'),
     [results, period]
+  );
+  const filteredModifications = useMemo(
+    () => filterByPeriod(modifications, period, 'date'),
+    [modifications, period]
   );
 
   // KPI : calculs
@@ -210,7 +214,7 @@ export function VisibilityEvolution({ scores, results, shopifyConfig, analysisRe
 
       {/* Graphique evolution */}
       <div className="rounded-lg border p-4">
-        <EvolutionChart scores={filteredScores} />
+        <EvolutionChart scores={filteredScores} modifications={filteredModifications} />
       </div>
 
       {/* Comparaison LLMs */}
@@ -225,7 +229,7 @@ export function VisibilityEvolution({ scores, results, shopifyConfig, analysisRe
 
       {/* Recommandations */}
       <div className="rounded-lg border p-4">
-        <InsightsPanel scores={filteredScores} results={filteredResults} shopifyConfig={shopifyConfig} analysisResults={analysisResults} />
+        <InsightsPanel scores={filteredScores} results={filteredResults} modifications={filteredModifications} shopifyConfig={shopifyConfig} analysisResults={analysisResults} />
       </div>
     </div>
   );

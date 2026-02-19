@@ -6,6 +6,7 @@ const POLL_MAX_DURATION = 180_000; // 3 minutes max
 export function useVisibility() {
   const [scores, setScores] = useState(null);
   const [results, setResults] = useState(null);
+  const [modifications, setModifications] = useState(null);
   const [loading, setLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
@@ -31,6 +32,7 @@ export function useVisibility() {
 
       setScores(data.scores || []);
       setResults(data.results || []);
+      setModifications(data.modifications || []);
       return data;
     } catch (err) {
       setError(err.message);
@@ -85,6 +87,7 @@ export function useVisibility() {
         if (newResults.length > baselineRef.current) {
           setScores(newScores);
           setResults(newResults);
+          setModifications(data.modifications || []);
           stopPolling();
           setPollStatus('found');
           setScanning(false);
@@ -155,6 +158,7 @@ export function useVisibility() {
   return {
     scores,
     results,
+    modifications,
     loading,
     scanning,
     error,

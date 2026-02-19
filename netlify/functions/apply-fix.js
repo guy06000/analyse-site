@@ -15,7 +15,7 @@ export const handler = async (event) => {
   }
 
   try {
-    const { fixId, store, accessToken, clientId, clientSecret, siteUrl, authorName, customSnippet } = JSON.parse(event.body);
+    const { fixId, store, accessToken, clientId, clientSecret, siteUrl, authorName, customSnippet, airtableToken } = JSON.parse(event.body);
 
     if (!fixId || !store || (!accessToken && (!clientId || !clientSecret))) {
       return {
@@ -30,6 +30,11 @@ export const handler = async (event) => {
 
     const ctx = { store, token, themeId, siteUrl, authorName, customSnippet };
     const result = await executeFix(fixId, ctx);
+
+    // Log modification dans Airtable (non-bloquant)
+    if (airtableToken && result.success) {
+      logModification(airtableToken, fixId, result).catch(() => {});
+    }
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };
   } catch (error) {
@@ -1105,4 +1110,63 @@ async function fixBlogContent(ctx) {
     message: `Article "${createdArticle.title}" créé en brouillon`,
     details: { articleId: createdArticle.id, adminUrl, blogId: blog.id },
   };
+}
+
+// ── Traçabilité : logging Airtable ──
+
+const AIRTABLE_BASE_ID = 'appwXFqjbbTDEbCVW';
+const MODIFICATIONS_TABLE = 'tblwyvDq2yOhs4PDO';
+const SCORES_TABLE = 'tblMYErlB8UKy1Bvt';
+
+const FIX_CATEGORIES = {
+  'robots-txt-ai': 'AI', 'llms-txt': 'AI', 'llms-full-txt': 'AI',
+  'meta-author': 'AI', 'ai-date-publication': 'AI', 'ai-semantic-html': 'AI',
+  'ai-faq-schema': 'AI', 'ai-plugin-json': 'AI',
+  'seo-canonical': 'SEO', 'seo-open-graph': 'SEO', 'seo-twitter-card': 'SEO',
+  'seo-json-ld': 'SEO', 'seo-json-ld-geo': 'SEO', 'seo-meta-keywords': 'SEO',
+  'seo-lazy-loading': 'SEO',
+  'geo-multisite-canonical': 'GEO', 'geo-seo-content': 'GEO', 'geo-blog-content': 'Blog',
+  'i18n-html-lang': 'i18n', 'i18n-hreflang': 'i18n', 'i18n-content-language': 'i18n',
+};
+
+async function getBaselineScore(airtableToken) {
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${SCORES_TABLE}?sort%5B0%5D%5Bfield%5D=date&sort%5B0%5D%5Bdirection%5D=desc&maxRecords=1`,
+      { headers: { Authorization: `Bearer ${airtableToken}` } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.records?.[0]?.fields?.score_global ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function logModification(airtableToken, fixId, result) {
+  const baselineScore = await getBaselineScore(airtableToken);
+  const productsCount = result.details?.frSuccess != null
+    ? (result.details.frSuccess + result.details.enSuccess)
+    : result.details?.articleId ? 1 : null;
+
+  const fields = {
+    date: new Date().toISOString().split('T')[0],
+    fix_id: fixId,
+    category: FIX_CATEGORIES[fixId] || 'SEO',
+    description: result.message,
+    status: 'monitoring',
+  };
+
+  if (productsCount != null) fields.products_count = productsCount;
+  if (result.details) fields.details_json = JSON.stringify(result.details);
+  if (baselineScore != null) fields.baseline_score = baselineScore;
+
+  await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${MODIFICATIONS_TABLE}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${airtableToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ records: [{ fields }] }),
+  });
 }

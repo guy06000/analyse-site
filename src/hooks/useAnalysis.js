@@ -1,5 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
 
+function getAirtableToken() {
+  try {
+    const config = JSON.parse(localStorage.getItem('visibilityConfig') || '{}');
+    return config.airtableToken || null;
+  } catch { return null; }
+}
+
 export function useAnalysis() {
   const [results, setResults] = useState({});
   const [loading, setLoading] = useState({});
@@ -64,6 +71,7 @@ export function useAnalysis() {
           accessToken: shopifyConfig.accessToken,
           siteUrl,
           authorName: shopifyConfig.authorName,
+          airtableToken: getAirtableToken(),
         }),
       });
 

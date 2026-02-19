@@ -184,6 +184,7 @@ export function VisibilityPanel({ config, onConfigChange, shopifyConfig, analysi
     error,
     scanResult,
     pollStatus,
+    modifications,
     loadData,
     triggerScan,
     stopPolling,
@@ -463,7 +464,7 @@ export function VisibilityPanel({ config, onConfigChange, shopifyConfig, analysi
             </TabsContent>
 
             <TabsContent value="evolution" className="mt-4">
-              <VisibilityEvolution scores={scores} results={results} shopifyConfig={shopifyConfig} analysisResults={analysisResults} />
+              <VisibilityEvolution scores={scores} results={results} modifications={modifications} shopifyConfig={shopifyConfig} analysisResults={analysisResults} />
             </TabsContent>
           </Tabs>
         </>

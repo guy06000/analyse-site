@@ -1,4 +1,11 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
+
+function getAirtableToken() {
+  try {
+    const config = JSON.parse(localStorage.getItem('visibilityConfig') || '{}');
+    return config.airtableToken || null;
+  } catch { return null; }
+}
 import {
   AlertTriangle,
   TrendingDown,
@@ -157,6 +164,7 @@ function JsonLdOptimizer({ shopifyConfig }) {
           store: shopifyConfig.store,
           accessToken: shopifyConfig.accessToken,
           customSnippet: data.liquidCode,
+          airtableToken: getAirtableToken(),
         }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
@@ -285,6 +293,7 @@ function SeoContentOptimizer({ shopifyConfig }) {
           store: shopifyConfig.store,
           accessToken: shopifyConfig.accessToken,
           customSnippet: JSON.stringify(data.products),
+          airtableToken: getAirtableToken(),
         }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
@@ -474,6 +483,7 @@ function BlogContentGenerator({ shopifyConfig }) {
             meta_description: data.meta_description,
             tags: data.tags,
           }),
+          airtableToken: getAirtableToken(),
         }),
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
@@ -798,7 +808,83 @@ function InsightCard({ insight, scores, results, shopifyConfig, analysisResults 
   );
 }
 
-export function InsightsPanel({ scores, results, shopifyConfig, analysisResults }) {
+const STATUS_STYLES = {
+  monitoring: { label: 'En suivi', class: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+  impact_detected: { label: 'Impact detecte', class: 'bg-green-100 text-green-700 border-green-200' },
+  no_impact: { label: 'Pas d\'impact', class: 'bg-red-100 text-red-700 border-red-200' },
+  applied: { label: 'Applique', class: 'bg-blue-100 text-blue-700 border-blue-200' },
+};
+
+const CATEGORY_COLORS = {
+  SEO: 'bg-blue-100 text-blue-700 border-blue-200',
+  AI: 'bg-orange-100 text-orange-700 border-orange-200',
+  GEO: 'bg-purple-100 text-purple-700 border-purple-200',
+  i18n: 'bg-green-100 text-green-700 border-green-200',
+  Blog: 'bg-pink-100 text-pink-700 border-pink-200',
+};
+
+function ModificationsTimeline({ modifications }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!modifications?.length) return null;
+
+  const shown = expanded ? modifications : modifications.slice(0, 3);
+
+  function daysSince(dateStr) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  }
+
+  return (
+    <div className="mb-4">
+      <h4 className="mb-2 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+        <FileText className="h-3.5 w-3.5" />
+        Historique des modifications ({modifications.length})
+      </h4>
+      <div className="space-y-1.5">
+        {shown.map((mod, i) => {
+          const days = daysSince(mod.date);
+          const statusStyle = STATUS_STYLES[mod.status] || STATUS_STYLES.applied;
+          const catStyle = CATEGORY_COLORS[mod.category] || CATEGORY_COLORS.SEO;
+          return (
+            <div key={i} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs">
+              <span className="text-muted-foreground whitespace-nowrap">{mod.date}</span>
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${catStyle}`}>
+                {mod.category}
+              </Badge>
+              <span className="truncate flex-1">{mod.description}</span>
+              {mod.impact_perplexity_7d != null && (
+                <span className={`whitespace-nowrap font-medium ${mod.impact_perplexity_7d > 0 ? 'text-green-600' : mod.impact_perplexity_7d < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  Perp: {mod.impact_perplexity_7d > 0 ? '+' : ''}{mod.impact_perplexity_7d}
+                </span>
+              )}
+              {mod.impact_global_30d != null && (
+                <span className={`whitespace-nowrap font-medium ${mod.impact_global_30d > 0 ? 'text-green-600' : mod.impact_global_30d < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  Global: {mod.impact_global_30d > 0 ? '+' : ''}{mod.impact_global_30d}
+                </span>
+              )}
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusStyle.class}`}>
+                {statusStyle.label}
+              </Badge>
+              <span className="text-muted-foreground whitespace-nowrap">il y a {days}j</span>
+            </div>
+          );
+        })}
+      </div>
+      {modifications.length > 3 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {expanded ? 'Voir moins' : `Voir les ${modifications.length - 3} autres`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function InsightsPanel({ scores, results, modifications, shopifyConfig, analysisResults }) {
   const [showTopOptimizer, setShowTopOptimizer] = useState(false);
   const hasShopify = !!(shopifyConfig?.store && shopifyConfig?.accessToken);
 
@@ -1086,6 +1172,7 @@ export function InsightsPanel({ scores, results, shopifyConfig, analysisResults 
           <JsonLdOptimizer shopifyConfig={shopifyConfig} />
         </div>
       )}
+      <ModificationsTimeline modifications={modifications} />
       <div className="space-y-2">
         {insights.map((insight, i) => (
           <InsightCard
