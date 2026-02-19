@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, Globe, Bot, Languages, Settings, Eye } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -15,15 +15,42 @@ const TABS = [
   { id: 'visibility', label: 'Visibilité', icon: Eye, type: 'visibility' },
 ];
 
+const QUICK_URLS = [
+  { label: 'ISIS n GOLD', url: 'https://isisngold.com', storeKey: 'isis' },
+  { label: 'Ma Formation Strass', url: 'https://ma-formation-strass.com', storeKey: 'ma-formation-strass' },
+  { label: 'Strass Dentaires', url: 'https://strass-dentaires.fr', storeKey: 'strass-dentaires' },
+];
+
+// Domain → storeKey mapping for auto-detection
+const DOMAIN_TO_STORE = {
+  'isisingold.com': 'isis',
+  'isisngold.com': 'isis',
+  'goldy-isis.myshopify.com': 'isis',
+  'ma-formation-strass.com': 'ma-formation-strass',
+  'ma-formation-strass.myshopify.com': 'ma-formation-strass',
+  'strass-dentaires.fr': 'strass-dentaires',
+  'c31a20-3.myshopify.com': 'strass-dentaires',
+};
+
+function detectStoreKey(urlStr) {
+  try {
+    const hostname = new URL(urlStr).hostname.replace(/^www\./, '');
+    return DOMAIN_TO_STORE[hostname] || null;
+  } catch {
+    return null;
+  }
+}
+
 function App() {
   const [url, setUrl] = useState('');
   const [activeTab, setActiveTab] = useState('seo');
   const [submitted, setSubmitted] = useState(false);
   const [showShopifyConfig, setShowShopifyConfig] = useState(false);
+  const [stores, setStores] = useState([]);
+  const [storesLoaded, setStoresLoaded] = useState(false);
   const [shopifyConfig, setShopifyConfig] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('shopifyConfig')) || {};
-      // Pre-fill store if empty
       if (!saved.store) saved.store = 'goldy-isis.myshopify.com';
       return saved;
     } catch {
@@ -47,13 +74,59 @@ function App() {
     localStorage.setItem('visibilityConfig', JSON.stringify(visibilityConfig));
   }, [visibilityConfig]);
 
-  // Auto-detect Shopify store from AI results
+  // Load stores from Airtable on mount
   useEffect(() => {
-    const aiData = results.ai;
-    if (aiData?.isShopify && aiData.shopifyStore && aiData.shopifyStore !== 'detected' && !shopifyConfig.store) {
-      setShopifyConfig((prev) => ({ ...prev, store: aiData.shopifyStore }));
-    }
-  }, [results.ai]);
+    const airtableToken = visibilityConfig.airtableToken;
+    if (!airtableToken) return;
+
+    fetch('/.netlify/functions/get-stores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ airtableToken }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stores?.length) {
+          setStores(data.stores);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setStoresLoaded(true));
+  }, [visibilityConfig.airtableToken]);
+
+  // Resolve the shopifyConfig for a given storeKey (synchronous, returns new config)
+  const resolveStoreConfig = useCallback(
+    (storeKey) => {
+      if (!storeKey) return shopifyConfig;
+
+      const found = stores.find((s) => s.id === storeKey);
+      if (found) {
+        return {
+          ...shopifyConfig,
+          store: found.store,
+          accessToken: found.accessToken || shopifyConfig.accessToken,
+          storeKey: found.id,
+          storeName: found.name,
+        };
+      }
+      // Fallback: keep current token, just update metadata
+      const fallbackStore = QUICK_URLS.find((q) => q.storeKey === storeKey);
+      if (fallbackStore) {
+        return { ...shopifyConfig, storeKey, storeName: fallbackStore.label };
+      }
+      return shopifyConfig;
+    },
+    [stores, shopifyConfig]
+  );
+
+  const switchStore = useCallback(
+    (storeKey) => {
+      if (!storeKey) return;
+      const newConfig = resolveStoreConfig(storeKey);
+      setShopifyConfig(newConfig);
+    },
+    [resolveStoreConfig]
+  );
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -65,13 +138,23 @@ function App() {
       setUrl(normalizedUrl);
     }
 
+    // Auto-detect store from URL and resolve config synchronously
+    const detectedKey = detectStoreKey(normalizedUrl);
+    const effectiveConfig = detectedKey ? resolveStoreConfig(detectedKey) : shopifyConfig;
+    if (detectedKey) setShopifyConfig(effectiveConfig);
+
     clearCache();
     analyzedTabs.current = new Set();
     setSubmitted(true);
 
-    analyze(normalizedUrl, 'seo', shopifyConfig);
+    analyze(normalizedUrl, 'seo', effectiveConfig);
     analyzedTabs.current.add('seo');
     setActiveTab('seo');
+  };
+
+  const handleQuickUrl = (q) => {
+    setUrl(q.url);
+    if (q.storeKey) switchStore(q.storeKey);
   };
 
   const handleTabChange = (tabId) => {
@@ -99,7 +182,7 @@ function App() {
     updateImageAlt(shopifyConfig.store, shopifyConfig.accessToken, productId, imageId, alt);
   };
 
-  const isShopify = results.ai?.isShopify;
+  const isShopify = results.ai?.isShopify || stores.length > 0;
   const hasCredentials = !!(shopifyConfig.store && shopifyConfig.accessToken);
 
   return (
@@ -123,6 +206,9 @@ function App() {
               >
                 <Settings className="mr-1 h-4 w-4" />
                 Shopify
+                {shopifyConfig.storeName && (
+                  <span className="ml-1 text-xs opacity-75">({shopifyConfig.storeName})</span>
+                )}
               </Button>
             )}
           </div>
@@ -143,10 +229,32 @@ function App() {
             Analyser
           </Button>
         </form>
+        <div className="flex gap-2 mt-2">
+          {QUICK_URLS.map((q) => (
+            <Button
+              key={q.url}
+              variant="ghost"
+              size="sm"
+              className={`text-xs hover:text-foreground ${
+                shopifyConfig.storeKey === q.storeKey
+                  ? 'text-primary font-medium'
+                  : 'text-muted-foreground'
+              }`}
+              onClick={() => handleQuickUrl(q)}
+            >
+              <Globe className="mr-1 h-3 w-3" />
+              {q.label}
+            </Button>
+          ))}
+        </div>
 
         {showShopifyConfig && (
           <div className="mt-4">
-            <ShopifyConfig config={shopifyConfig} onChange={setShopifyConfig} />
+            <ShopifyConfig
+              config={shopifyConfig}
+              onChange={setShopifyConfig}
+              stores={stores}
+            />
           </div>
         )}
 
@@ -185,6 +293,7 @@ function App() {
                   onSaveAlt={handleSaveAlt}
                   altSaving={altSaving}
                   altResults={altResults}
+                  tabType={tab.type}
                 />
               )}
             </TabsContent>

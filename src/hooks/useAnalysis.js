@@ -20,7 +20,8 @@ export function useAnalysis() {
 
   const analyze = async (url, type, shopifyConfig) => {
     lastUrl.current = url;
-    const cacheKey = `${url}:${type}`;
+    const storeId = shopifyConfig?.store || '';
+    const cacheKey = `${url}:${type}:${storeId}`;
     if (cache.current[cacheKey]) {
       setResults((prev) => ({ ...prev, [type]: cache.current[cacheKey] }));
       return;
@@ -89,7 +90,8 @@ export function useAnalysis() {
         const type = fixAction.id.startsWith('seo-') ? 'seo'
           : fixAction.id.startsWith('i18n-') ? 'i18n'
           : 'ai';
-        delete cache.current[`${url}:${type}`];
+        const storeId = shopifyConfig?.store || '';
+        delete cache.current[`${url}:${type}:${storeId}`];
         setTimeout(() => analyze(url, type, shopifyConfig), 2000);
       }
     } catch (error) {
@@ -121,7 +123,7 @@ export function useAnalysis() {
       // Invalidate SEO cache and re-analyze after 2s
       const url = lastUrl.current;
       if (url) {
-        delete cache.current[`${url}:seo`];
+        delete cache.current[`${url}:seo:${store}`];
         setTimeout(() => analyze(url, 'seo', { store, accessToken }), 2000);
       }
     } catch (error) {

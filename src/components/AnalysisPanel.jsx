@@ -3,8 +3,9 @@ import { Loader2 } from 'lucide-react';
 import { GlobalScore } from './GlobalScore';
 import { ScoreCard } from './ScoreCard';
 import { CheckDetails } from './CheckDetails';
+import { TranslationViewer } from './TranslationViewer';
 
-export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixingId, fixResults, onSaveAlt, altSaving, altResults }) {
+export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixingId, fixResults, onSaveAlt, altSaving, altResults, tabType }) {
   const [selectedCategory, setSelectedCategory] = useState(null);
 
   if (loading) {
@@ -66,6 +67,10 @@ export function AnalysisPanel({ data, loading, error, shopifyConfig, onFix, fixi
             altResults={altResults}
           />
         </div>
+      )}
+
+      {tabType === 'i18n' && shopifyConfig && (
+        <TranslationViewer shopifyConfig={shopifyConfig} />
       )}
     </div>
   );
